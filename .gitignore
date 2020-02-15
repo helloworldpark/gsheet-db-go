@@ -16,3 +16,6 @@
 
 # JSON
 *.json
+
+# Binary
+gsheet-db-go
