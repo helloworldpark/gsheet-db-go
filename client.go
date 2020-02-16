@@ -14,7 +14,7 @@ import (
 	"google.golang.org/api/sheets/v4"
 )
 
-func OpenFromFile(credentialPath string) *sheets.Service {
+func ServiceFromFile(credentialPath string) *sheets.Service {
 	credential, err := ioutil.ReadFile(credentialPath)
 	if err != nil {
 		log.Fatal(err)
