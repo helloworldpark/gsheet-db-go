@@ -19,6 +19,7 @@ func ServiceFromFile(credentialPath string) *sheets.Service {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// https://developers.google.com/sheets/api/guides/authorizing
 	config, err := google.ConfigFromJSON(credential, "https://www.googleapis.com/auth/spreadsheets")
 	if err != nil {
 		log.Fatal(err)
