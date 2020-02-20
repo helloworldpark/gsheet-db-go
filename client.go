@@ -9,30 +9,98 @@ import (
 	"net/http"
 	"os"
 
+	"cloud.google.com/go/storage"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 )
 
-func ServiceFromFile(credentialPath string) *sheets.Service {
-	credential, err := ioutil.ReadFile(credentialPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// https://developers.google.com/sheets/api/guides/authorizing
-	config, err := google.ConfigFromJSON(credential, "https://www.googleapis.com/auth/spreadsheets")
+func SheetServiceFromFile(jsonPath string) *sheets.Service {
+	ctx := context.Background()
+	service, err := sheets.NewService(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 
+	sheetService := sheets.NewSpreadsheetsService(service)
+	fmt.Printf("SheetServiceFromFile %+v \n", sheetService)
+
+	result, err := http.DefaultClient.Get(service.BasePath)
+	if err == nil {
+		fmt.Println(result)
+	} else {
+		log.Fatal(err)
+	}
+
+	return service
+}
+
+func FilesServiceFromFile(jsonPath string) *drive.FilesService {
+	ctx := context.Background()
+	service, err := drive.NewService(ctx, option.WithCredentialsFile(jsonPath))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fileService := drive.NewFilesService(service)
+	filelist, err := fileService.List().Do()
+
+	fmt.Println("FilesServiceFromFile")
+	if err != nil {
+		fmt.Println("ERROR:", err)
+	} else {
+		for i, f := range filelist.Files {
+			fmt.Printf("FILE[%d]: %+v\n", i, f.Properties)
+		}
+	}
+
+	return fileService
+}
+
+func DriveServiceFromFile(jsonPath string) *drive.Service {
+	b, err := ioutil.ReadFile(jsonPath)
+	if err != nil {
+		log.Fatalf("Unable to read client secret file: %v", err)
+	}
+
+	// If modifying these scopes, delete your previously saved token.json.
+	config, err := google.ConfigFromJSON(b, drive.DriveScope)
+	if err != nil {
+		fmt.Println(b)
+		log.Fatalf("Unable to parse client secret file to config: %v", err)
+	}
 	client := getClient(config)
 
-	srv, err := sheets.New(client)
+	srv, err := drive.New(client)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Unable to create people Client %v", err)
 	}
 
 	return srv
+}
+
+func StorageClient() {
+	ctx := context.Background()
+	storageClient, err := storage.NewClient(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// it := storageClient.Buckets(ctx, "ticklemeta-203110")
+	it := storageClient.Bucket("ticklemeta-storage").Objects(ctx, nil)
+	for {
+		bucketAttrs, err := it.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(bucketAttrs.Name, bucketAttrs.Created)
+	}
+
 }
 
 func getClient(config *oauth2.Config) *http.Client {
