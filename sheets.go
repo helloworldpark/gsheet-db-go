@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/sheets/v4"
@@ -203,12 +204,12 @@ func (m *SheetManager) DeleteDatabase(title string) bool {
  * Table api
  */
 
-// CreateTable Creates new sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
+// CreateEmptyTable Creates a new sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database).
 // Case handling:
 // database == nil: return nil
 // database != nil && has sheet with tableName: log as existing, and return the existing sheet
 // database != nil && does not have sheet with tableName: log as creating, and return the created sheet
-func (m *SheetManager) CreateTable(database *sheets.Spreadsheet, tableName string) *sheets.Sheet {
+func (m *SheetManager) CreateEmptyTable(database *sheets.Spreadsheet, tableName string) *sheets.Sheet {
 	if database == nil {
 		return nil
 	}
@@ -279,4 +280,162 @@ func (m *SheetManager) batchUpdate(database *sheets.Spreadsheet, requests []*she
 		panic(err)
 	}
 	return resp.UpdatedSpreadsheet
+}
+
+var primitiveStringToKind = make(map[string]reflect.Kind)
+var primitiveKindToString = make(map[reflect.Kind]string)
+
+func initPrimitiveKind() {
+	if len(primitiveStringToKind) > 0 {
+		return
+	}
+	for k := reflect.Bool; k <= reflect.Uint64; k++ {
+		primitiveStringToKind[k.String()] = k
+		primitiveKindToString[k] = k.String()
+	}
+	for k := reflect.Float32; k <= reflect.Float64; k++ {
+		primitiveStringToKind[k.String()] = k
+		primitiveKindToString[k] = k.String()
+	}
+	primitiveStringToKind[reflect.String.String()] = reflect.String
+	primitiveKindToString[reflect.String] = reflect.String.String()
+}
+
+func isPrimitive(i interface{}) bool {
+	_, ok := primitiveKindToString[reflect.TypeOf(i).Kind()]
+	return ok
+}
+
+type structField struct {
+	cname  string
+	ctype  string
+	ckind  reflect.Kind
+	cvalue interface{}
+}
+
+func (f structField) isBool() bool {
+	return f.ckind == reflect.Bool
+}
+
+func (f structField) isString() bool {
+	return f.ckind == reflect.String
+}
+
+func (f structField) isNumeric() bool {
+	return reflect.Int8 <= f.ckind && f.ckind <= reflect.Float64
+}
+
+func analyseStruct(structInstance interface{}) []structField {
+	initPrimitiveKind()
+
+	reflected := reflect.TypeOf(structInstance)
+	if reflected.Kind() != reflect.Struct {
+		return nil
+	}
+	reflectedValue := reflect.ValueOf(structInstance)
+
+	n := reflected.NumField()
+	fields := make([]structField, n)
+
+	for i := 0; i < n; i++ {
+		value := reflectedValue.Field(i)
+		valueType := reflectedValue.Type().Field(i)
+		valueKind := valueType.Type.Kind()
+
+		typestring, ok := primitiveKindToString[valueKind]
+		if !ok {
+			fmt.Println("Not a struct: ", value)
+			return nil
+		}
+
+		fields[i].ctype = typestring
+		fields[i].cname = valueType.Name
+		fields[i].ckind = valueKind
+		fields[i].cvalue = value.Interface()
+	}
+	return fields
+}
+
+func (m *SheetManager) addColumns(table *sheets.Sheet, structInstance interface{}) bool {
+	if table == nil {
+		return false
+	}
+	fields := analyseStruct(structInstance)
+	if fields == nil {
+		return false
+	}
+
+	requests := make([]*sheets.Request, 1)
+	requests[0].UpdateCells = &sheets.UpdateCellsRequest{}
+
+	requests[0].UpdateCells.Range = &sheets.GridRange{}
+	requests[0].UpdateCells.Range.SheetId = table.Properties.SheetId
+	requests[0].UpdateCells.Range.StartRowIndex = 0
+	requests[0].UpdateCells.Range.EndRowIndex = 2
+
+	data := make([]*sheets.RowData, 3)
+	// Row 0: Column names
+	data[0].Values = make([]*sheets.CellData, len(fields))
+	for i := range data[0].Values {
+		f := fields[i]
+		if _, ok := primitiveKindToString[f.ckind]; !ok {
+			// todo: log not a primitive field
+			return false
+		}
+		v := &sheets.CellData{}
+		v.UserEnteredValue = &sheets.ExtendedValue{}
+		if f.isBool() {
+			v.UserEnteredValue.BoolValue = f.cvalue.(bool)
+		} else if f.isNumeric() {
+			var value float64
+			switch f.ckind {
+			case reflect.Int:
+				value = float64(f.cvalue.(int))
+			case reflect.Int8:
+				value = float64(f.cvalue.(int8))
+			case reflect.Int16:
+				value = float64(f.cvalue.(int16))
+			case reflect.Int32:
+				value = float64(f.cvalue.(int32))
+			case reflect.Int64:
+				value = float64(f.cvalue.(int64))
+			case reflect.Uint:
+				value = float64(f.cvalue.(uint))
+			case reflect.Uint8:
+				value = float64(f.cvalue.(uint8))
+			case reflect.Uint16:
+				value = float64(f.cvalue.(uint16))
+			case reflect.Uint32:
+				value = float64(f.cvalue.(uint32))
+			case reflect.Uint64:
+				value = float64(f.cvalue.(uint64))
+			case reflect.Float32:
+				value = float64(f.cvalue.(float32))
+			case reflect.Float64:
+				value = float64(f.cvalue.(float64))
+			}
+			v.UserEnteredValue.NumberValue = value
+		} else if f.isString() {
+			v.UserEnteredValue.StringValue = f.cvalue.(string)
+		} else {
+			// todo log not supported
+			return false
+		}
+
+		data[0].Values[i] = v
+	}
+	// data[0].Values[0].EffectiveValue.
+
+	// Row 1: Column datatype
+
+	// Row 2, Col 0: How many data
+
+	// Row 2, Col 1: How many columns
+
+	// Row 2, Col 2: Constraints
+
+	requests[0].UpdateCells.Start.RowIndex = 2
+	requests[0].UpdateCells.Start.ColumnIndex = 0
+
+	return true
 }

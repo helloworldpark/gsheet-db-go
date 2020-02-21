@@ -44,7 +44,7 @@ func ListSharedDrives() []string {
 	return driveName
 }
 
-func ListMyDriveFiles(service *drive.Service) []string {
+func ListSharedDriveFiles(service *drive.Service) []string {
 	resp, err := http.DefaultClient.Get(service.BasePath + "files")
 	if err != nil {
 		log.Fatal(err)

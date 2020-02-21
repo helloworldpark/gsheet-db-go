@@ -101,8 +101,8 @@ func TestCreateTable(t *testing.T) {
 		fmt.Println("Database Name:     ", sheet.Properties.Title)
 		fmt.Println("Database Timezone: ", sheet.Properties.TimeZone)
 		fmt.Println("------Creating table------")
-		manager.CreateTable(sheet, "MAMA")
-		manager.CreateTable(sheet, "NENE")
+		manager.CreateEmptyTable(sheet, "MAMA")
+		manager.CreateEmptyTable(sheet, "NENE")
 		tables := manager.GetTableList(sheet)
 		for i := range tables {
 			fmt.Printf("Table[%d] Name: %s\n", i, tables[i].Properties.Title)
@@ -151,5 +151,35 @@ func TestDeleteTable(t *testing.T) {
 		for i := range tables {
 			fmt.Printf("Table[%d] Name: %s\n", i, tables[i].Properties.Title)
 		}
+	}
+}
+
+// Structs reflection test
+func TestStructsReflection(t *testing.T) {
+	type TestStruct struct {
+		Name1 int16
+		Name2 int32
+		Name3 int
+		Name4 float64
+		Name5 string
+		Name6 bool
+	}
+
+	initPrimitiveKind()
+	if isPrimitive(10.1) {
+		fmt.Println("Is Primitive")
+	} else {
+		fmt.Println("Is not Primitive")
+	}
+
+	tt := TestStruct{Name1: 1, Name2: 5, Name3: 3, Name4: 100000000.3141592, Name5: ":ADFDE", Name6: true}
+	analysed := analyseStruct(tt)
+	if len(analysed) == 0 {
+		fmt.Println("NONONO")
+		return
+	}
+
+	for i := 0; i < len(analysed); i++ {
+		fmt.Printf("[%d] Name=%s Type=%s Value=%v\n", i, analysed[i].cname, analysed[i].ctype, analysed[i].cvalue)
 	}
 }

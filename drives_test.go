@@ -7,13 +7,13 @@ import (
 
 func TestListDriveFiles(t *testing.T) {
 	DriveServiceFromFile("credentials.json")
-	fmt.Println(ListMyDriveFiles(nil))
+	fmt.Println(ListSharedDriveFiles(nil))
 }
 
 func TestListDrives(t *testing.T) {
 	service := DriveServiceFromFile("../ticklemetadrive.json")
 	fmt.Println("Drives", service)
-	fmt.Println(ListMyDriveFiles(service))
+	fmt.Println(ListSharedDriveFiles(service))
 }
 
 func TestListSheets(t *testing.T) {
