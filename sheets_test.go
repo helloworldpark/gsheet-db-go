@@ -198,11 +198,11 @@ func TestCreateTableFromStructs(t *testing.T) {
 	initPrimitiveKind()
 
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.FindDatabase("testdb")
-	if sheet == nil {
+	db := manager.FindDatabase("testdb")
+	if db == nil {
 		t.Fatalf("Sheet %s is nil", "testdb")
 	}
 
-	table := manager.CreateTableFromStruct(sheet, TestStructMeme{})
+	table := manager.CreateTableFromStruct(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
 }

@@ -163,13 +163,13 @@ func analyseStruct(structInstance interface{}) []structField {
 	return fields
 }
 
-func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstance interface{}, constraints ...interface{}) bool {
+func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstance interface{}, constraints ...interface{}) []*sheets.Request {
 	if table == nil {
-		return false
+		return nil
 	}
 	fields := analyseStruct(structInstance)
 	if fields == nil {
-		return false
+		return nil
 	}
 
 	requests := make([]*sheets.Request, 1)
@@ -189,7 +189,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 		field := fields[i]
 		if _, ok := primitiveKindToString[field.ckind]; !ok {
 			// todo: log not a primitive field
-			return false
+			return nil
 		}
 		data[0].Values[i] = &sheets.CellData{}
 		data[0].Values[i].UserEnteredValue = &sheets.ExtendedValue{}
@@ -224,7 +224,8 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 		// todo
 	}
 
-	return true
+	requests[0].UpdateCells.Rows = data
+	return requests
 }
 
 func (m *SheetManager) CreateTableFromStruct(database *sheets.Spreadsheet, structInstance interface{}, constraints ...interface{}) *sheets.Sheet {
@@ -234,10 +235,32 @@ func (m *SheetManager) CreateTableFromStruct(database *sheets.Spreadsheet, struc
 		return newSheet
 	}
 
-	didMake := m.createColumnsFromStruct(newSheet, structInstance, constraints...)
-	if didMake {
+	requests := m.createColumnsFromStruct(newSheet, structInstance, constraints...)
+	updated := m.batchUpdate(database, requests)
+	if updated != nil {
 		return newSheet
 	}
+	return nil
+}
+
+type TableMetadata struct {
+	Columns     []string
+	Types       []reflect.Kind
+	Rows        int64
+	Constraints string
+}
+
+func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s interface{}) *TableMetadata {
+	tableName := reflect.TypeOf(s).Name()
+	table := m.GetTable(db, tableName)
+	if table == nil {
+		return nil
+	}
+
+	// DB를 갱신
+
+	// 0행~2행, 모든 열을 읽는다
+	// requests[0].
 
 	return nil
 }

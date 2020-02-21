@@ -199,3 +199,15 @@ func (m *SheetManager) DeleteDatabase(title string) bool {
 	}
 	return m.DeleteSpreadsheet(db.SpreadsheetId)
 }
+
+func (m *SheetManager) SyncDatabaseToGoogle(db *sheets.Spreadsheet) *sheets.Spreadsheet {
+	if db == nil {
+		return nil
+	}
+	db, err := m.service.Spreadsheets.Get(db.SpreadsheetId).Do()
+	if err != nil {
+		fmt.Printf("[SheetManager]SyncDatabaseToGoogle: %+v", err)
+		return nil
+	}
+	return db
+}
