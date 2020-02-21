@@ -1,204 +1,11 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"reflect"
 
-	"golang.org/x/oauth2"
 	"google.golang.org/api/sheets/v4"
 )
-
-const dbFileStart = "database_file_"
-
-// SheetManager Manage OAuth2 token lifecycle
-type SheetManager struct {
-	client         *http.Client
-	service        *sheets.Service
-	token          *oauth2.Token
-	credentialJSON string
-}
-
-// NewSheetManager Create new SheetManager
-func NewSheetManager(jsonPath string) *SheetManager {
-	client := http.DefaultClient
-	service, _ := sheets.New(client)
-	token := CreateJWTToken(jsonPath)
-
-	m := &SheetManager{
-		client:         client,
-		token:          token,
-		service:        service,
-		credentialJSON: jsonPath,
-	}
-	return m
-}
-
-// RefreshToken refreshes token if not valid
-func (m *SheetManager) RefreshToken() bool {
-	if m.token.Valid() {
-		return false
-	}
-	token := CreateJWTToken(m.credentialJSON)
-	m.token = token
-	return true
-}
-
-// CreateSpreadsheet creates a single spreadsheet file
-func (m *SheetManager) CreateSpreadsheet(title string) *sheets.Spreadsheet {
-	// check duplicated title
-	if m.FindSpreadsheet(title) != nil {
-		return nil
-	}
-
-	rb := &sheets.Spreadsheet{
-		Properties: &sheets.SpreadsheetProperties{
-			Title:      title,
-			TimeZone:   "Asia/Seoul",
-			AutoRecalc: "ON_CHANGE",
-		},
-	}
-	req := m.service.Spreadsheets.Create(rb)
-	req.Header().Add("Authorization", "Bearer "+m.token.AccessToken)
-	resp, err := req.Do()
-	if err != nil {
-		panic(err)
-	}
-
-	return resp
-}
-
-// GetSpreadsheet gets a single spreadsheet file with id, if exists.
-func (m *SheetManager) GetSpreadsheet(spreadsheetID string) *sheets.Spreadsheet {
-	req := m.service.Spreadsheets.Get(spreadsheetID).IncludeGridData(true)
-	req.Header().Add("Authorization", "Bearer "+m.token.AccessToken)
-	resp, err := req.Do()
-	if err != nil {
-		panic(err)
-	}
-	return resp
-}
-
-// DeleteSpreadsheet deletes spreadsheet file with `spreadsheetId`
-// Returns true if deleted(status code 20X)
-//         false if else
-// https://stackoverflow.com/questions/46836393/how-do-i-delete-a-spreadsheet-file-using-google-spreadsheets-api
-// https://stackoverflow.com/questions/46310113/consume-a-delete-endpoint-from-golang
-func (m *SheetManager) DeleteSpreadsheet(spreadsheetID string) bool {
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s", spreadsheetID), nil)
-	if err != nil {
-		panic(err)
-	}
-	req.Header.Add("Authorization", "Bearer "+m.token.AccessToken)
-	resp, err := m.client.Do(req)
-	if err != nil {
-		panic(err)
-	}
-	return resp.StatusCode/100 == 2
-}
-
-// ListSpreadsheets lists spreadsheets' id by []string
-func (m *SheetManager) ListSpreadsheets() []string {
-	req, err := http.NewRequest("GET", "https://www.googleapis.com/drive/v3/files", nil)
-	if err != nil {
-		panic(err)
-	}
-	req.Header.Add("Authorization", "Bearer "+m.token.AccessToken)
-	// https://stackoverflow.com/questions/30652577/go-doing-a-get-request-and-building-the-querystring
-	// https://developers.google.com/drive/api/v3/mime-types
-	shouldBe := "mimeType='application/vnd.google-apps.spreadsheet'"
-	values := req.URL.Query()
-	values.Add("q", shouldBe)
-	req.URL.RawQuery = values.Encode()
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		panic(err)
-	}
-	read, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		panic(err)
-	}
-
-	var readJSON interface{}
-	json.Unmarshal(read, &readJSON)
-
-	mapJSON, ok := readJSON.(map[string]interface{})
-	if !ok {
-		return nil
-	}
-
-	files, ok := mapJSON["files"]
-	if !ok {
-		return nil
-	}
-	fileArr, ok := files.([]interface{})
-	if !ok {
-		return nil
-	}
-
-	var sheetArr []string
-	for _, f := range fileArr {
-		fmap, ok := f.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		trashed, ok := fmap["trashed"].(bool)
-		if ok && trashed {
-			continue
-		}
-		fileID, ok := fmap["id"].(string)
-		if !ok {
-			continue
-		}
-		sheetArr = append(sheetArr, fileID)
-
-	}
-	return sheetArr
-}
-
-// FindSpreadsheet finds a spreadsheet with `title`
-func (m *SheetManager) FindSpreadsheet(title string) *sheets.Spreadsheet {
-	sheetIDs := m.ListSpreadsheets()
-	for _, sheetID := range sheetIDs {
-		s := m.GetSpreadsheet(sheetID)
-		if s.Properties.Title == title {
-			return s
-		}
-	}
-	return nil
-}
-
-/*
- * Database alias api
- */
-
-// CreateDatabase creates a new database with the given database_file_`title`.
-// Be careful, 'database_file_' tag is on the start of the title.
-func (m *SheetManager) CreateDatabase(title string) *sheets.Spreadsheet {
-	return m.CreateSpreadsheet(dbFileStart + title)
-}
-
-// FindDatabase gets a new database with the given database_file_`title`, if exists.
-// If not existing, it will return nil.
-// Be careful, 'database_file_' tag is on the start of the title finding for.
-func (m *SheetManager) FindDatabase(title string) *sheets.Spreadsheet {
-	return m.FindSpreadsheet(dbFileStart + title)
-}
-
-// DeleteDatabase deletes a database with the given database_file_`title`, if exists.
-// If not existing, or failed to delete, it will log and return false.
-// Be careful, 'database_file_' tag is implicitly on the start of the title finding for.
-func (m *SheetManager) DeleteDatabase(title string) bool {
-	db := m.FindDatabase(title)
-	if db == nil {
-		return false
-	}
-	return m.DeleteSpreadsheet(db.SpreadsheetId)
-}
 
 /*
  * Table api
@@ -356,7 +163,7 @@ func analyseStruct(structInstance interface{}) []structField {
 	return fields
 }
 
-func (m *SheetManager) addColumns(table *sheets.Sheet, structInstance interface{}) bool {
+func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstance interface{}, constraints ...interface{}) bool {
 	if table == nil {
 		return false
 	}
@@ -377,65 +184,90 @@ func (m *SheetManager) addColumns(table *sheets.Sheet, structInstance interface{
 	// Row 0: Column names
 	data[0].Values = make([]*sheets.CellData, len(fields))
 	for i := range data[0].Values {
-		f := fields[i]
-		if _, ok := primitiveKindToString[f.ckind]; !ok {
+		field := fields[i]
+		if _, ok := primitiveKindToString[field.ckind]; !ok {
 			// todo: log not a primitive field
 			return false
 		}
-		v := &sheets.CellData{}
-		v.UserEnteredValue = &sheets.ExtendedValue{}
-		if f.isBool() {
-			v.UserEnteredValue.BoolValue = f.cvalue.(bool)
-		} else if f.isNumeric() {
-			var value float64
-			switch f.ckind {
-			case reflect.Int:
-				value = float64(f.cvalue.(int))
-			case reflect.Int8:
-				value = float64(f.cvalue.(int8))
-			case reflect.Int16:
-				value = float64(f.cvalue.(int16))
-			case reflect.Int32:
-				value = float64(f.cvalue.(int32))
-			case reflect.Int64:
-				value = float64(f.cvalue.(int64))
-			case reflect.Uint:
-				value = float64(f.cvalue.(uint))
-			case reflect.Uint8:
-				value = float64(f.cvalue.(uint8))
-			case reflect.Uint16:
-				value = float64(f.cvalue.(uint16))
-			case reflect.Uint32:
-				value = float64(f.cvalue.(uint32))
-			case reflect.Uint64:
-				value = float64(f.cvalue.(uint64))
-			case reflect.Float32:
-				value = float64(f.cvalue.(float32))
-			case reflect.Float64:
-				value = float64(f.cvalue.(float64))
-			}
-			v.UserEnteredValue.NumberValue = value
-		} else if f.isString() {
-			v.UserEnteredValue.StringValue = f.cvalue.(string)
-		} else {
-			// todo log not supported
-			return false
-		}
-
-		data[0].Values[i] = v
+		data[0].Values[i] = &sheets.CellData{}
+		data[0].Values[i].UserEnteredValue = &sheets.ExtendedValue{}
+		data[0].Values[i].UserEnteredValue.StringValue = field.cname
 	}
-	// data[0].Values[0].EffectiveValue.
 
 	// Row 1: Column datatype
+	data[1].Values = make([]*sheets.CellData, len(fields))
+	for i := range data[1].Values {
+		data[1].Values[i] = &sheets.CellData{}
+		data[1].Values[i].UserEnteredValue = &sheets.ExtendedValue{}
+		data[1].Values[i].UserEnteredValue.StringValue = fields[i].ctype
+	}
 
-	// Row 2, Col 0: How many data
-
-	// Row 2, Col 1: How many columns
-
-	// Row 2, Col 2: Constraints
-
-	requests[0].UpdateCells.Start.RowIndex = 2
-	requests[0].UpdateCells.Start.ColumnIndex = 0
+	// Row 2, Col 0: How many data(numrows)
+	// Row 2, Col 1: How many columns(numcols)
+	// Row 2, Col 2: Constraints(optional)
+	if len(constraints) > 0 {
+		data[1].Values = make([]*sheets.CellData, 3)
+	} else {
+		data[1].Values = make([]*sheets.CellData, 2)
+	}
+	data[1].Values[0].UserEnteredValue = &sheets.ExtendedValue{}
+	data[1].Values[0].UserEnteredValue.NumberValue = 0
+	data[1].Values[1].UserEnteredValue = &sheets.ExtendedValue{}
+	data[1].Values[1].UserEnteredValue.NumberValue = float64(len(fields))
+	if len(constraints) > 0 {
+		data[1].Values[2].UserEnteredValue = &sheets.ExtendedValue{}
+		// data[1].Values[2].UserEnteredValue.StringValue =
+	}
 
 	return true
 }
+
+//
+// for i := range data[0].Values {
+// 	f := fields[i]
+// 	if _, ok := primitiveKindToString[f.ckind]; !ok {
+// 		// todo: log not a primitive field
+// 		return false
+// 	}
+// 	v := &sheets.CellData{}
+// 	v.UserEnteredValue = &sheets.ExtendedValue{}
+// 	if f.isBool() {
+// 		v.UserEnteredValue.BoolValue = f.cvalue.(bool)
+// 	} else if f.isNumeric() {
+// 		var value float64
+// 		switch f.ckind {
+// 		case reflect.Int:
+// 			value = float64(f.cvalue.(int))
+// 		case reflect.Int8:
+// 			value = float64(f.cvalue.(int8))
+// 		case reflect.Int16:
+// 			value = float64(f.cvalue.(int16))
+// 		case reflect.Int32:
+// 			value = float64(f.cvalue.(int32))
+// 		case reflect.Int64:
+// 			value = float64(f.cvalue.(int64))
+// 		case reflect.Uint:
+// 			value = float64(f.cvalue.(uint))
+// 		case reflect.Uint8:
+// 			value = float64(f.cvalue.(uint8))
+// 		case reflect.Uint16:
+// 			value = float64(f.cvalue.(uint16))
+// 		case reflect.Uint32:
+// 			value = float64(f.cvalue.(uint32))
+// 		case reflect.Uint64:
+// 			value = float64(f.cvalue.(uint64))
+// 		case reflect.Float32:
+// 			value = float64(f.cvalue.(float32))
+// 		case reflect.Float64:
+// 			value = float64(f.cvalue.(float64))
+// 		}
+// 		v.UserEnteredValue.NumberValue = value
+// 	} else if f.isString() {
+// 		v.UserEnteredValue.StringValue = f.cvalue.(string)
+// 	} else {
+// 		// todo log not supported
+// 		return false
+// 	}
+
+// 	data[0].Values[i] = v
+// }
