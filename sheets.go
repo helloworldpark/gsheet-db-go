@@ -14,16 +14,16 @@ import (
 // CreateEmptyTable Creates a new sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database).
 // Case handling:
 // database == nil: return nil
-// database != nil && has sheet with tableName: log as existing, and return the existing sheet
-// database != nil && does not have sheet with tableName: log as creating, and return the created sheet
-func (m *SheetManager) CreateEmptyTable(database *sheets.Spreadsheet, tableName string) *sheets.Sheet {
+// database != nil && has sheet with tableName: log as existing, and return the existing sheet with false
+// database != nil && does not have sheet with tableName: log as creating, and return the created sheet with true
+func (m *SheetManager) CreateEmptyTable(database *sheets.Spreadsheet, tableName string) (*sheets.Sheet, bool) {
 	if database == nil {
-		return nil
+		return nil, false
 	}
 	for _, sheet := range database.Sheets {
-		if sheet.Properties.Title == dbFileStart+tableName {
+		if sheet.Properties.Title == tableName {
 			// todo: log
-			return sheet
+			return sheet, false
 		}
 	}
 	request := make([]*sheets.Request, 1)
@@ -32,7 +32,7 @@ func (m *SheetManager) CreateEmptyTable(database *sheets.Spreadsheet, tableName 
 	request[0].AddSheet.Properties = &sheets.SheetProperties{}
 	request[0].AddSheet.Properties.Title = tableName
 	newSheet := m.batchUpdate(database, request)
-	return newSheet.Sheets[len(newSheet.Sheets)-1]
+	return newSheet.Sheets[len(newSheet.Sheets)-1], true
 }
 
 // GetTable Gets an existing sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
@@ -173,6 +173,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	}
 
 	requests := make([]*sheets.Request, 1)
+	requests[0] = &sheets.Request{}
 	requests[0].UpdateCells = &sheets.UpdateCellsRequest{}
 
 	requests[0].UpdateCells.Range = &sheets.GridRange{}
@@ -182,6 +183,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 
 	data := make([]*sheets.RowData, 3)
 	// Row 0: Column names
+	data[0] = &sheets.RowData{}
 	data[0].Values = make([]*sheets.CellData, len(fields))
 	for i := range data[0].Values {
 		field := fields[i]
@@ -195,6 +197,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	}
 
 	// Row 1: Column datatype
+	data[1] = &sheets.RowData{}
 	data[1].Values = make([]*sheets.CellData, len(fields))
 	for i := range data[1].Values {
 		data[1].Values[i] = &sheets.CellData{}
@@ -206,20 +209,37 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	// Row 2, Col 1: How many columns(numcols)
 	// Row 2, Col 2: Constraints(optional)
 	if len(constraints) > 0 {
-		data[1].Values = make([]*sheets.CellData, 3)
+		data[2].Values = make([]*sheets.CellData, 3)
 	} else {
-		data[1].Values = make([]*sheets.CellData, 2)
+		data[2].Values = make([]*sheets.CellData, 2)
 	}
-	data[1].Values[0].UserEnteredValue = &sheets.ExtendedValue{}
-	data[1].Values[0].UserEnteredValue.NumberValue = 0
-	data[1].Values[1].UserEnteredValue = &sheets.ExtendedValue{}
-	data[1].Values[1].UserEnteredValue.NumberValue = float64(len(fields))
+	data[2] = &sheets.RowData{}
+	data[2].Values[0].UserEnteredValue = &sheets.ExtendedValue{}
+	data[2].Values[0].UserEnteredValue.NumberValue = 0
+	data[2].Values[1].UserEnteredValue = &sheets.ExtendedValue{}
+	data[2].Values[1].UserEnteredValue.NumberValue = float64(len(fields))
 	if len(constraints) > 0 {
-		data[1].Values[2].UserEnteredValue = &sheets.ExtendedValue{}
-		// data[1].Values[2].UserEnteredValue.StringValue =
+		data[2].Values[2].UserEnteredValue = &sheets.ExtendedValue{}
+		// data[2].Values[2].UserEnteredValue.StringValue =
+		// todo
 	}
 
 	return true
+}
+
+func (m *SheetManager) CreateTableFromStruct(database *sheets.Spreadsheet, structInstance interface{}, constraints ...interface{}) *sheets.Sheet {
+	tableName := reflect.TypeOf(structInstance).Name()
+	newSheet, isNew := m.CreateEmptyTable(database, tableName)
+	if !isNew {
+		return newSheet
+	}
+
+	didMake := m.createColumnsFromStruct(newSheet, structInstance, constraints...)
+	if didMake {
+		return newSheet
+	}
+
+	return nil
 }
 
 //

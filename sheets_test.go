@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -173,6 +174,7 @@ func TestStructsReflection(t *testing.T) {
 	}
 
 	tt := TestStruct{Name1: 1, Name2: 5, Name3: 3, Name4: 100000000.3141592, Name5: ":ADFDE", Name6: true}
+	fmt.Println("Name is ", reflect.TypeOf(tt).Name())
 	analysed := analyseStruct(tt)
 	if len(analysed) == 0 {
 		fmt.Println("NONONO")
@@ -182,4 +184,25 @@ func TestStructsReflection(t *testing.T) {
 	for i := 0; i < len(analysed); i++ {
 		fmt.Printf("[%d] Name=%s Type=%s Value=%v\n", i, analysed[i].cname, analysed[i].ctype, analysed[i].cvalue)
 	}
+}
+
+func TestCreateTableFromStructs(t *testing.T) {
+	type TestStructMeme struct {
+		Name1 int16
+		Name2 int32
+		Name3 int
+		Name4 float64
+		Name5 string
+		Name6 bool
+	}
+	initPrimitiveKind()
+
+	manager := NewSheetManager(jsonPath)
+	sheet := manager.FindDatabase("testdb")
+	if sheet == nil {
+		t.Fatalf("Sheet %s is nil", "testdb")
+	}
+
+	table := manager.CreateTableFromStruct(sheet, TestStructMeme{})
+	fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
 }
