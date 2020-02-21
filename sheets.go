@@ -175,11 +175,10 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	requests := make([]*sheets.Request, 1)
 	requests[0] = &sheets.Request{}
 	requests[0].UpdateCells = &sheets.UpdateCellsRequest{}
-
+	requests[0].UpdateCells.Fields = "*"
 	requests[0].UpdateCells.Range = &sheets.GridRange{}
 	requests[0].UpdateCells.Range.SheetId = table.Properties.SheetId
-	requests[0].UpdateCells.Range.StartRowIndex = 0
-	requests[0].UpdateCells.Range.EndRowIndex = 2
+	requests[0].UpdateCells.Range.EndRowIndex = 3
 
 	data := make([]*sheets.RowData, 3)
 	// Row 0: Column names
@@ -208,14 +207,16 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	// Row 2, Col 0: How many data(numrows)
 	// Row 2, Col 1: How many columns(numcols)
 	// Row 2, Col 2: Constraints(optional)
-	if len(constraints) > 0 {
-		data[2].Values = make([]*sheets.CellData, 3)
-	} else {
-		data[2].Values = make([]*sheets.CellData, 2)
-	}
 	data[2] = &sheets.RowData{}
+	data[2].Values = make([]*sheets.CellData, 2)
+	data[2].Values[0] = &sheets.CellData{}
+	data[2].Values[1] = &sheets.CellData{}
+	if len(constraints) > 0 {
+		data[2].Values = append(data[2].Values, &sheets.CellData{})
+		data[2].Values[2] = &sheets.CellData{}
+	}
 	data[2].Values[0].UserEnteredValue = &sheets.ExtendedValue{}
-	data[2].Values[0].UserEnteredValue.NumberValue = 0
+	data[2].Values[0].UserEnteredValue.NumberValue = 0.0
 	data[2].Values[1].UserEnteredValue = &sheets.ExtendedValue{}
 	data[2].Values[1].UserEnteredValue.NumberValue = float64(len(fields))
 	if len(constraints) > 0 {
@@ -252,17 +253,69 @@ type TableMetadata struct {
 
 func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s interface{}) *TableMetadata {
 	tableName := reflect.TypeOf(s).Name()
+	tableCols := reflect.TypeOf(s).NumField()
+
+	// DB를 갱신
+	db = m.SyncDatabaseToGoogle(db)
 	table := m.GetTable(db, tableName)
 	if table == nil {
 		return nil
 	}
 
-	// DB를 갱신
-
 	// 0행~2행, 모든 열을 읽는다
-	// requests[0].
+	// 0행
+	var ranges string
+	leftMost := "A"
+	rightMost := "C"
+	if tableCols > 3 {
+		rightMost = string('@' + tableCols)
+	}
+	ranges = fmt.Sprintf("%s%d:%s%d", leftMost, 1, rightMost, 3)
+	ranges = fmt.Sprintf("%s!%s", tableName, ranges)
+	req := m.service.Spreadsheets.Values.Get(db.SpreadsheetId, ranges)
+	req.Header().Add("Authorization", "Bearer "+m.token.AccessToken)
+	valueRange, err := req.Do()
+	if err != nil {
+		panic(err)
+	}
 
-	return nil
+	fmt.Println("Data:-----")
+	for i := range valueRange.Values {
+		for j := range valueRange.Values[i] {
+			fmt.Printf("    Data[%d][%d] = %+v", i, j, valueRange.Values[i][j])
+		}
+		fmt.Println()
+	}
+
+	// todo error check
+	colnames := make([]string, len(table.Data[0].RowData[0].Values))
+	for i := range colnames {
+		colnames[i] = valueRange.Values[0][i].(string)
+	}
+	// 1행
+	types := make([]reflect.Kind, len(table.Data[0].RowData[1].Values))
+	for i := range colnames {
+		kindString := valueRange.Values[1][i].(string)
+		types[i] = primitiveStringToKind[kindString]
+		fmt.Printf("Types[%d]: %s - %d\n", i, kindString, int64(types[i]))
+	}
+	// 2행
+	rowsFloat, ok := valueRange.Values[2][0].(float64)
+	var rows int64
+	if ok {
+		rows = int64(rowsFloat)
+	}
+	var constraints = ""
+	if len(valueRange.Values[2]) >= 3 {
+		constraints = valueRange.Values[2][2].(string)
+	}
+	metadata := &TableMetadata{
+		Columns:     colnames,
+		Types:       types,
+		Rows:        rows,
+		Constraints: constraints,
+	}
+	return metadata
 }
 
 //

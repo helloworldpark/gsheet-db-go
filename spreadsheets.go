@@ -204,9 +204,10 @@ func (m *SheetManager) SyncDatabaseToGoogle(db *sheets.Spreadsheet) *sheets.Spre
 	if db == nil {
 		return nil
 	}
-	db, err := m.service.Spreadsheets.Get(db.SpreadsheetId).Do()
-	if err != nil {
-		fmt.Printf("[SheetManager]SyncDatabaseToGoogle: %+v", err)
+
+	db = m.GetSpreadsheet(db.SpreadsheetId)
+	if db == nil {
+		fmt.Printf("[SheetManager]SyncDatabaseToGoogle: DB is nil")
 		return nil
 	}
 	return db

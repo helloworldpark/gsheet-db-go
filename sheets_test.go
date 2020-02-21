@@ -141,11 +141,12 @@ func TestDeleteTable(t *testing.T) {
 		fmt.Println("Database Timezone: ", sheet.Properties.TimeZone)
 		fmt.Println("------Viewing table------")
 
-		deleted := manager.DeleteTable(sheet, "Sheet1")
+		tableName := "TestStructMeme"
+		deleted := manager.DeleteTable(sheet, tableName)
 		if deleted {
-			fmt.Println("Deleted Table = Sheet1")
+			fmt.Println("Deleted Table = ", tableName)
 		} else {
-			fmt.Println("Failed delete Table = Sheet1")
+			fmt.Println("Failed delete Table = ", tableName)
 		}
 
 		tables := manager.GetTableList(sheet)
@@ -205,4 +206,7 @@ func TestCreateTableFromStructs(t *testing.T) {
 
 	table := manager.CreateTableFromStruct(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
+
+	tableMeta := manager.ReadTableMetadataFromStruct(db, TestStructMeme{})
+	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 }
