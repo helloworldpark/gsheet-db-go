@@ -263,3 +263,37 @@ func (r *httpSpreadsheetCreateRequest) Do() *sheets.Spreadsheet {
 	}
 	return resp
 }
+
+type httpBatchUpdateRequest struct {
+	batchRequest  *sheets.BatchUpdateSpreadsheetRequest
+	manager       *SheetManager
+	spreadsheetID string
+}
+
+func newSpreadsheetBatchUpdateRequest(manager *SheetManager, spreadsheetID string, requests ...*sheets.Request) *httpBatchUpdateRequest {
+	batchRequest := &sheets.BatchUpdateSpreadsheetRequest{}
+	batchRequest.IncludeSpreadsheetInResponse = true
+	batchRequest.Requests = requests
+	return &httpBatchUpdateRequest{
+		batchRequest:  batchRequest,
+		manager:       manager,
+		spreadsheetID: spreadsheetID,
+	}
+}
+
+func (r *httpBatchUpdateRequest) updateRequest(req *sheets.Request) {
+	if req == nil {
+		return
+	}
+	r.batchRequest.Requests = append(r.batchRequest.Requests, req)
+}
+
+func (r *httpBatchUpdateRequest) Do() *sheets.Spreadsheet {
+	req := r.manager.service.Spreadsheets.BatchUpdate(r.spreadsheetID, r.batchRequest)
+	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
+	resp, err := req.Do()
+	if err != nil {
+		panic(err)
+	}
+	return resp.UpdatedSpreadsheet
+}

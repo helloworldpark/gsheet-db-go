@@ -77,16 +77,7 @@ func (m *SheetManager) DeleteTable(database *sheets.Spreadsheet, tableName strin
 }
 
 func (m *SheetManager) batchUpdate(database *sheets.Spreadsheet, requests []*sheets.Request) *sheets.Spreadsheet {
-	batchRequest := &sheets.BatchUpdateSpreadsheetRequest{}
-	batchRequest.IncludeSpreadsheetInResponse = true
-	batchRequest.Requests = requests
-	req := m.service.Spreadsheets.BatchUpdate(database.SpreadsheetId, batchRequest)
-	req.Header().Add("Authorization", "Bearer "+m.token.AccessToken)
-	resp, err := req.Do()
-	if err != nil {
-		panic(err)
-	}
-	return resp.UpdatedSpreadsheet
+	return newSpreadsheetBatchUpdateRequest(m, database.SpreadsheetId, requests...).Do()
 }
 
 var primitiveStringToKind = make(map[string]reflect.Kind)
