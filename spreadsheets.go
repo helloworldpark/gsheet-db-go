@@ -297,3 +297,64 @@ func (r *httpBatchUpdateRequest) Do() *sheets.Spreadsheet {
 	}
 	return resp.UpdatedSpreadsheet
 }
+
+type httpValueRangeRequest struct {
+	manager       *SheetManager
+	ranges        string
+	spreadsheetID string
+}
+
+const leftmostCol = "A"
+const rightmostCol = "C"
+const defaultRange = "A1C3"
+
+func newSpreadsheetValuesRequest(manager *SheetManager, spreadsheetID, tableName string) *httpValueRangeRequest {
+	return &httpValueRangeRequest{
+		manager:       manager,
+		ranges:        defaultRange,
+		spreadsheetID: spreadsheetID,
+	}
+}
+
+func base26(x int) string {
+	if x < 0 {
+		panic(fmt.Sprintf("x should not be negative: %d", x))
+	}
+	if x > 26 {
+		panic(fmt.Sprintf("Unsupported number %d", x))
+	}
+	return string('@' + x)
+}
+
+func (r *httpValueRangeRequest) updateRange(tablename string, startRow, startCol, endRow, endCol int) bool {
+	if startRow < 1 || startRow >= endRow {
+		return false
+	}
+
+	if startCol < 1 || startCol >= endCol {
+		return false
+	}
+
+	var ranges string
+	leftmost := base26(startCol)
+	rightmost := rightmostCol
+	if endCol > 3 {
+		rightmost = base26(endCol)
+	}
+
+	ranges = fmt.Sprintf("%s%d:%s%d", leftmost, startRow, rightmost, endRow)
+	ranges = fmt.Sprintf("%s!%s", tablename, ranges)
+
+	r.ranges = ranges
+	return true
+}
+
+func (r *httpValueRangeRequest) Do() *sheets.ValueRange {
+	req := r.manager.service.Spreadsheets.Values.Get(r.spreadsheetID, r.ranges)
+	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
+	valueRange, err := req.Do()
+	if err != nil {
+		panic(err)
+	}
+	return valueRange
+}

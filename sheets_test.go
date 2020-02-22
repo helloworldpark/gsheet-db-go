@@ -210,3 +210,9 @@ func TestCreateTableFromStructs(t *testing.T) {
 	tableMeta := manager.ReadTableMetadataFromStruct(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 }
+
+func TestBase26(t *testing.T) {
+	for i := 1; i <= 26*26*3+26*2+4; i++ {
+		fmt.Printf("[%04d] = %s\n--------------\n", i, base26(i))
+	}
+}

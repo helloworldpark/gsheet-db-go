@@ -255,20 +255,9 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 
 	// 0행~2행, 모든 열을 읽는다
 	// 0행
-	var ranges string
-	leftMost := "A"
-	rightMost := "C"
-	if tableCols > 3 {
-		rightMost = string('@' + tableCols)
-	}
-	ranges = fmt.Sprintf("%s%d:%s%d", leftMost, 1, rightMost, 3)
-	ranges = fmt.Sprintf("%s!%s", tableName, ranges)
-	req := m.service.Spreadsheets.Values.Get(db.SpreadsheetId, ranges)
-	req.Header().Add("Authorization", "Bearer "+m.token.AccessToken)
-	valueRange, err := req.Do()
-	if err != nil {
-		panic(err)
-	}
+	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, tableName)
+	req.updateRange(tableName, 1, 1, 3, tableCols)
+	valueRange := req.Do()
 
 	fmt.Println("Data:-----")
 	for i := range valueRange.Values {
