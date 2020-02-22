@@ -87,36 +87,17 @@ func (m *SheetManager) GetSpreadsheet(spreadsheetID string) *sheets.Spreadsheet 
 // https://stackoverflow.com/questions/46836393/how-do-i-delete-a-spreadsheet-file-using-google-spreadsheets-api
 // https://stackoverflow.com/questions/46310113/consume-a-delete-endpoint-from-golang
 func (m *SheetManager) DeleteSpreadsheet(spreadsheetID string) bool {
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s", spreadsheetID), nil)
-	if err != nil {
-		panic(err)
-	}
-	req.Header.Add("Authorization", "Bearer "+m.token.AccessToken)
-	resp, err := m.client.Do(req)
-	if err != nil {
-		panic(err)
-	}
+	resp := newURLRequest(m, delete, fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s", spreadsheetID)).Do()
 	return resp.StatusCode/100 == 2
 }
 
 // ListSpreadsheets lists spreadsheets' id by []string
 func (m *SheetManager) ListSpreadsheets() []string {
-	req, err := http.NewRequest("GET", "https://www.googleapis.com/drive/v3/files", nil)
-	if err != nil {
-		panic(err)
-	}
-	req.Header.Add("Authorization", "Bearer "+m.token.AccessToken)
+	req := newURLRequest(m, get, "https://www.googleapis.com/drive/v3/files")
 	// https://stackoverflow.com/questions/30652577/go-doing-a-get-request-and-building-the-querystring
 	// https://developers.google.com/drive/api/v3/mime-types
-	shouldBe := "mimeType='application/vnd.google-apps.spreadsheet'"
-	values := req.URL.Query()
-	values.Add("q", shouldBe)
-	req.URL.RawQuery = values.Encode()
-
-	resp, err := m.client.Do(req)
-	if err != nil {
-		panic(err)
-	}
+	req.AddQuery("q", "mimeType='application/vnd.google-apps.spreadsheet'")
+	resp := req.Do()
 	read, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
@@ -200,7 +181,7 @@ func (m *SheetManager) DeleteDatabase(title string) bool {
 	return m.DeleteSpreadsheet(db.SpreadsheetId)
 }
 
-func (m *SheetManager) SyncDatabaseToGoogle(db *sheets.Spreadsheet) *sheets.Spreadsheet {
+func (m *SheetManager) SyncDatabaseFromGoogle(db *sheets.Spreadsheet) *sheets.Spreadsheet {
 	if db == nil {
 		return nil
 	}
@@ -211,4 +192,55 @@ func (m *SheetManager) SyncDatabaseToGoogle(db *sheets.Spreadsheet) *sheets.Spre
 		return nil
 	}
 	return db
+}
+
+type httpRequest interface {
+	Header() http.Header
+}
+
+type httpMethod string
+
+const (
+	get    httpMethod = "GET"
+	post   httpMethod = "POST"
+	delete httpMethod = "DELETE"
+	put    httpMethod = "PUT"
+)
+
+type httpURLRequest struct {
+	Req *http.Request
+
+	manager *SheetManager
+}
+
+func newURLRequest(manager *SheetManager, method httpMethod, url string) *httpURLRequest {
+	req, err := http.NewRequest(string(method), url, nil)
+	if err != nil {
+		panic(err)
+	}
+	return &httpURLRequest{
+		Req:     req,
+		manager: manager,
+	}
+}
+
+// interface httpRequest
+func (r *httpURLRequest) Header() http.Header {
+	return r.Req.Header
+}
+
+func (r *httpURLRequest) AddQuery(key, value string) *httpURLRequest {
+	values := r.Req.URL.Query()
+	values.Add(key, value)
+	r.Req.URL.RawQuery = values.Encode()
+	return r
+}
+
+func (r *httpURLRequest) Do() *http.Response {
+	r.Req.Header.Add("Authorization", "Bearer "+r.manager.token.AccessToken)
+	resp, err := r.manager.client.Do(r.Req)
+	if err != nil {
+		panic(err)
+	}
+	return resp
 }

@@ -10,7 +10,7 @@ import (
 func TestCreateGetDeleteSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
 	sheet := manager.CreateSpreadsheet("Test First!")
-	fmt.Println("------Created sheet------")
+	fmt.Printf("------Created sheet %p------\n", sheet)
 	fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
 	fmt.Println("Sheet Name: ", sheet.Properties.Title)
 	fmt.Println("Sheet Timezone: ", sheet.Properties.TimeZone)
@@ -57,7 +57,7 @@ func TestListSpreadsheet(t *testing.T) {
 // Delete
 func TestDeleteSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.FindSpreadsheet("testdb")
+	sheet := manager.FindSpreadsheet(dbFileStart + "testdb")
 	fmt.Println("------Found sheet------")
 	fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
 	fmt.Println("Sheet Name: ", sheet.Properties.Title)
