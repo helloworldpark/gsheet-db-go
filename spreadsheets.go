@@ -53,21 +53,7 @@ func (m *SheetManager) CreateSpreadsheet(title string) *sheets.Spreadsheet {
 		return nil
 	}
 
-	rb := &sheets.Spreadsheet{
-		Properties: &sheets.SpreadsheetProperties{
-			Title:      title,
-			TimeZone:   "Asia/Seoul",
-			AutoRecalc: "ON_CHANGE",
-		},
-	}
-	req := m.service.Spreadsheets.Create(rb)
-	req.Header().Add("Authorization", "Bearer "+m.token.AccessToken)
-	resp, err := req.Do()
-	if err != nil {
-		panic(err)
-	}
-
-	return resp
+	return newSpreadsheetCreateRequest(m, title).Do()
 }
 
 // GetSpreadsheet gets a single spreadsheet file with id, if exists.
@@ -208,8 +194,7 @@ const (
 )
 
 type httpURLRequest struct {
-	Req *http.Request
-
+	req     *http.Request
 	manager *SheetManager
 }
 
@@ -219,26 +204,60 @@ func newURLRequest(manager *SheetManager, method httpMethod, url string) *httpUR
 		panic(err)
 	}
 	return &httpURLRequest{
-		Req:     req,
+		req:     req,
 		manager: manager,
 	}
 }
 
 // interface httpRequest
 func (r *httpURLRequest) Header() http.Header {
-	return r.Req.Header
+	return r.req.Header
 }
 
 func (r *httpURLRequest) AddQuery(key, value string) *httpURLRequest {
-	values := r.Req.URL.Query()
+	values := r.req.URL.Query()
 	values.Add(key, value)
-	r.Req.URL.RawQuery = values.Encode()
+	r.req.URL.RawQuery = values.Encode()
 	return r
 }
 
 func (r *httpURLRequest) Do() *http.Response {
-	r.Req.Header.Add("Authorization", "Bearer "+r.manager.token.AccessToken)
-	resp, err := r.manager.client.Do(r.Req)
+	r.req.Header.Add("Authorization", "Bearer "+r.manager.token.AccessToken)
+	resp, err := r.manager.client.Do(r.req)
+	if err != nil {
+		panic(err)
+	}
+	return resp
+}
+
+type httpSpreadsheetCreateRequest struct {
+	req     *sheets.SpreadsheetsCreateCall
+	manager *SheetManager
+}
+
+func newSpreadsheetCreateRequest(manager *SheetManager, title string) *httpSpreadsheetCreateRequest {
+	rb := &sheets.Spreadsheet{
+		Properties: &sheets.SpreadsheetProperties{
+			Title:      title,
+			TimeZone:   "Asia/Seoul",
+			AutoRecalc: "ON_CHANGE",
+		},
+	}
+	req := manager.service.Spreadsheets.Create(rb)
+	return &httpSpreadsheetCreateRequest{
+		req:     req,
+		manager: manager,
+	}
+}
+
+// interface httpSpreadsheetCreateRequest
+func (r *httpSpreadsheetCreateRequest) Header() http.Header {
+	return r.req.Header()
+}
+
+func (r *httpSpreadsheetCreateRequest) Do() *sheets.Spreadsheet {
+	r.req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
+	resp, err := r.req.Do()
 	if err != nil {
 		panic(err)
 	}

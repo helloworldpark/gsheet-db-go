@@ -9,7 +9,7 @@ import (
 // create, get, delete
 func TestCreateGetDeleteSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.CreateSpreadsheet("Test First!")
+	sheet := manager.CreateSpreadsheet("Test First!2")
 	fmt.Printf("------Created sheet %p------\n", sheet)
 	fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
 	fmt.Println("Sheet Name: ", sheet.Properties.Title)
