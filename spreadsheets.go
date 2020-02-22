@@ -37,13 +37,12 @@ func NewSheetManager(jsonPath string) *SheetManager {
 }
 
 // RefreshToken refreshes token if not valid
-func (m *SheetManager) RefreshToken() bool {
-	if m.token.Valid() {
-		return false
+func (m *SheetManager) RefreshToken() {
+	if !m.token.Valid() {
+		token := CreateJWTToken(m.credentialJSON)
+		m.token = token
 	}
-	token := CreateJWTToken(m.credentialJSON)
-	m.token = token
-	return true
+	return
 }
 
 // CreateSpreadsheet creates a single spreadsheet file
@@ -222,6 +221,7 @@ func (r *httpURLRequest) AddQuery(key, value string) *httpURLRequest {
 }
 
 func (r *httpURLRequest) Do() *http.Response {
+	r.manager.RefreshToken()
 	r.req.Header.Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	resp, err := r.manager.client.Do(r.req)
 	if err != nil {
@@ -256,6 +256,7 @@ func (r *httpSpreadsheetCreateRequest) Header() http.Header {
 }
 
 func (r *httpSpreadsheetCreateRequest) Do() *sheets.Spreadsheet {
+	r.manager.RefreshToken()
 	r.req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	resp, err := r.req.Do()
 	if err != nil {
@@ -289,6 +290,7 @@ func (r *httpBatchUpdateRequest) updateRequest(req *sheets.Request) {
 }
 
 func (r *httpBatchUpdateRequest) Do() *sheets.Spreadsheet {
+	r.manager.RefreshToken()
 	req := r.manager.service.Spreadsheets.BatchUpdate(r.spreadsheetID, r.batchRequest)
 	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	resp, err := req.Do()
@@ -335,6 +337,8 @@ func (r *httpValueRangeRequest) updateRange(tablename string, startRow, startCol
 		return false
 	}
 
+	r.manager.RefreshToken()
+
 	var ranges string
 	leftmost := base26(startCol)
 	rightmost := rightmostCol
@@ -350,6 +354,7 @@ func (r *httpValueRangeRequest) updateRange(tablename string, startRow, startCol
 }
 
 func (r *httpValueRangeRequest) Do() *sheets.ValueRange {
+	r.manager.RefreshToken()
 	req := r.manager.service.Spreadsheets.Values.Get(r.spreadsheetID, r.ranges)
 	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	valueRange, err := req.Do()
