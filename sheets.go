@@ -236,6 +236,7 @@ func (m *SheetManager) CreateTableFromStruct(database *sheets.Spreadsheet, struc
 }
 
 type TableMetadata struct {
+	Name        string
 	Columns     []string
 	Types       []reflect.Kind
 	Rows        int64
@@ -290,6 +291,7 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 		constraints = valueRange.Values[2][2].(string)
 	}
 	metadata := &TableMetadata{
+		Name:        tableName,
 		Columns:     colnames,
 		Types:       types,
 		Rows:        rows,
@@ -297,6 +299,74 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	}
 	return metadata
 }
+
+func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interface{}) [][]interface{} {
+	metadata := m.ReadTableMetadataFromStruct(db, s)
+	if metadata == nil {
+		return nil
+	}
+	if metadata.Rows == 0 {
+		return nil
+	}
+	table := m.GetTable(db, metadata.Name)
+	if table == nil {
+		return nil
+	}
+
+	// 3행~, 모든 열을 읽는다
+	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, metadata.Name)
+	req.updateRange(metadata.Name, 1, 1, 3, int(metadata.Rows+3))
+	valueRange := req.Do()
+
+	fmt.Println("Data:-----")
+	for i := range valueRange.Values {
+		for j := range valueRange.Values[i] {
+			fmt.Printf("    Data[%d][%d] = %+v", i, j, valueRange.Values[i][j])
+		}
+		fmt.Println()
+	}
+
+	return valueRange.Values
+}
+
+// colnames := metadata.Columns
+// 	types := metadata.Types
+// 	createStruct := func() dstruct.DynamicStruct {
+// 		instance := dstruct.NewStruct()
+// 		for i := 0; i < len(colnames); i++ {
+// 			switch types[i] {
+// 			case reflect.Bool:
+// 				instance.AddField(colnames[i], false, "")
+// 			case reflect.Int:
+// 				instance.AddField(colnames[i], int(0), "")
+// 			case reflect.Int8:
+// 				instance.AddField(colnames[i], int8(0), "")
+// 			case reflect.Int16:
+// 				instance.AddField(colnames[i], int16(0), "")
+// 			case reflect.Int32:
+// 				instance.AddField(colnames[i], int32(0), "")
+// 			case reflect.Int64:
+// 				instance.AddField(colnames[i], int64(0), "")
+// 			case reflect.Uint:
+// 				instance.AddField(colnames[i], uint(0), "")
+// 			case reflect.Uint8:
+// 				instance.AddField(colnames[i], uint8(0), "")
+// 			case reflect.Uint16:
+// 				instance.AddField(colnames[i], uint16(0), "")
+// 			case reflect.Uint32:
+// 				instance.AddField(colnames[i], uint32(0), "")
+// 			case reflect.Uint64:
+// 				instance.AddField(colnames[i], uint64(0), "")
+// 			case reflect.Float32:
+// 				instance.AddField(colnames[i], float32(0), "")
+// 			case reflect.Float64:
+// 				instance.AddField(colnames[i], float64(0), "")
+// 			case reflect.String:
+// 				instance.AddField(colnames[i], "", "")
+// 			}
+// 		}
+// 		return instance.Build()
+// 	}()
 
 //
 // for i := range data[0].Values {
