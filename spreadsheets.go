@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/sheets/v4"
@@ -348,6 +349,7 @@ func (r *httpValueRangeRequest) updateRange(tablename string, startRow, startCol
 
 	ranges = fmt.Sprintf("%s%d:%s%d", leftmost, startRow, rightmost, endRow)
 	ranges = fmt.Sprintf("%s!%s", tablename, ranges)
+	fmt.Println("Value Range: ", ranges)
 
 	r.ranges = ranges
 	return true
@@ -362,4 +364,85 @@ func (r *httpValueRangeRequest) Do() *sheets.ValueRange {
 		panic(err)
 	}
 	return valueRange
+}
+
+type httpUpdateValuesRequest struct {
+	manager        *SheetManager
+	ranges         string
+	spreadsheetID  string
+	updatingValues [][]interface{}
+}
+
+func newSpreadsheetValuesUpdateRequest(manager *SheetManager, spreadsheetID, tableName string) *httpUpdateValuesRequest {
+	return &httpUpdateValuesRequest{
+		manager:       manager,
+		ranges:        defaultRange,
+		spreadsheetID: spreadsheetID,
+	}
+}
+
+func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []interface{}, appendData bool) bool {
+	if len(values) == 0 {
+		return false
+	}
+	startRow := 4
+	if appendData {
+		startRow += int(metadata.Rows)
+	}
+	endRow := startRow + len(values) - 1
+	const startCol = 1
+	endCol := startCol + len(metadata.Columns) - 1
+
+	for i := range values {
+		r.updatingValues = append(r.updatingValues, make([]interface{}, 0))
+		reflected := reflect.ValueOf(values[i])
+		for j := 0; j < len(metadata.Columns); j++ {
+			r.updatingValues[i] = append(r.updatingValues[i], reflected.FieldByName(metadata.Columns[j]).Interface())
+		}
+	}
+
+	var ranges string
+	leftmost := base26(startCol)
+	rightmost := rightmostCol
+	if endCol > 3 {
+		rightmost = base26(endCol)
+	}
+
+	ranges = fmt.Sprintf("%s%d:%s%d", leftmost, startRow, rightmost, endRow)
+	ranges = fmt.Sprintf("%s!%s", metadata.Name, ranges)
+
+	r.ranges = ranges
+	fmt.Println("WRITE")
+	return true
+}
+
+func (r *httpUpdateValuesRequest) updateRows(metadata *TableMetadata, adding int) bool {
+	unpackedValues := make([][]interface{}, 1)
+	unpackedValues[0] = make([]interface{}, 1)
+	unpackedValues[0][0] = metadata.Rows + int64(adding)
+	fmt.Println("ADDING ", unpackedValues)
+
+	r.ranges = fmt.Sprintf("%s!A3", metadata.Name)
+	r.updatingValues = unpackedValues
+	return true
+}
+
+func (r *httpUpdateValuesRequest) Do() int {
+	r.manager.RefreshToken()
+	rangeValues := &sheets.ValueRange{}
+	rangeValues.Range = r.ranges
+	rangeValues.Values = r.updatingValues
+	req := r.manager.service.Spreadsheets.Values.Update(r.spreadsheetID, r.ranges, rangeValues)
+	req.ValueInputOption("RAW")
+	req.IncludeValuesInResponse(true)
+	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
+	updatedRange, err := req.Do()
+	if err != nil {
+		fmt.Println(r)
+		panic(err)
+	}
+	fmt.Println(updatedRange.UpdatedCells)
+	fmt.Println(updatedRange.UpdatedData.Range)
+	fmt.Println(updatedRange.UpdatedData.Values)
+	return updatedRange.HTTPStatusCode
 }

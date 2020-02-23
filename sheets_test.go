@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"reflect"
 	"testing"
 )
@@ -214,5 +215,70 @@ func TestCreateTableFromStructs(t *testing.T) {
 func TestBase26(t *testing.T) {
 	for i := 1; i <= 26*26*3+26*2+4; i++ {
 		fmt.Printf("[%04d] = %s\n--------------\n", i, base26(i))
+	}
+}
+
+func TestReadAndWriteTable(t *testing.T) {
+	type TestStructMeme struct {
+		Name1 int16
+		Name2 int32
+		Name3 int
+		Name4 float64
+		Name5 string
+		Name6 bool
+	}
+	initPrimitiveKind()
+
+	manager := NewSheetManager(jsonPath)
+	db := manager.FindDatabase("testdb")
+	if db == nil {
+		t.Fatalf("Sheet %s is nil", "testdb")
+	}
+
+	// Find or make table
+	table := manager.GetTable(db, "TestStructMeme")
+	if table == nil {
+		table = manager.CreateTableFromStruct(db, TestStructMeme{})
+		fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
+	} else {
+		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
+	}
+
+	// Write to table
+	var values []interface{}
+	for i := 0; i < 10; i++ {
+		meme := TestStructMeme{
+			Name1: int16(rand.Int31()),
+			Name2: rand.Int31(),
+			Name3: rand.Int(),
+			Name4: rand.Float64(),
+			Name5: fmt.Sprintf("Perfume%d", i),
+			Name6: rand.Int()%2 == 0,
+		}
+		reflected := reflect.ValueOf(meme)
+		for j := 0; j < reflected.NumField(); j++ {
+			field := reflected.Field(j)
+			fmt.Printf("W[%d]%s = %v ", i, reflected.Type().Field(j).Name, field.Interface())
+		}
+		fmt.Printf("\n")
+
+		values = append(values, meme)
+	}
+	didSuccess := manager.WriteTableData(db, values, true)
+	if didSuccess {
+		fmt.Printf("Table %s[%d] Success Write %d Data\n", table.Properties.Title, table.Properties.SheetId, len(values))
+	} else {
+		fmt.Printf("Table %s[%d] Failed  Write %d Data\n", table.Properties.Title, table.Properties.SheetId, len(values))
+	}
+
+	tableMeta := manager.ReadTableMetadataFromStruct(db, TestStructMeme{})
+	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
+
+	tableValue := manager.ReadTableDataFromStruct(db, TestStructMeme{}, -1)
+	for i := 0; i < len(tableValue); i++ {
+		for j := 0; j < len(tableValue[i]); j++ {
+			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
+		}
+		fmt.Printf("\n")
 	}
 }

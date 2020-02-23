@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"google.golang.org/api/sheets/v4"
 )
@@ -260,15 +261,7 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	req.updateRange(tableName, 1, 1, 3, tableCols)
 	valueRange := req.Do()
 
-	fmt.Println("Data:-----")
-	for i := range valueRange.Values {
-		for j := range valueRange.Values[i] {
-			fmt.Printf("    Data[%d][%d] = %+v", i, j, valueRange.Values[i][j])
-		}
-		fmt.Println()
-	}
-
-	// todo error check
+	fmt.Println("Metadata Values", valueRange.Values)
 	colnames := make([]string, len(table.Data[0].RowData[0].Values))
 	for i := range colnames {
 		colnames[i] = valueRange.Values[0][i].(string)
@@ -278,14 +271,15 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	for i := range colnames {
 		kindString := valueRange.Values[1][i].(string)
 		types[i] = primitiveStringToKind[kindString]
-		fmt.Printf("Types[%d]: %s - %d\n", i, kindString, int64(types[i]))
 	}
 	// 2행
-	rowsFloat, ok := valueRange.Values[2][0].(float64)
+	rowsString, ok := valueRange.Values[2][0].(string)
+	fmt.Println("Rows String: ", rowsString)
 	var rows int64
 	if ok {
-		rows = int64(rowsFloat)
+		rows, _ = strconv.ParseInt(rowsString, 10, 64)
 	}
+
 	var constraints = ""
 	if len(valueRange.Values[2]) >= 3 {
 		constraints = valueRange.Values[2][2].(string)
@@ -300,33 +294,63 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	return metadata
 }
 
-func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interface{}) [][]interface{} {
+func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interface{}, rows int) [][]interface{} {
 	metadata := m.ReadTableMetadataFromStruct(db, s)
 	if metadata == nil {
+		fmt.Println("ReadTableDataFromStruct: Metadata is nil")
 		return nil
 	}
 	if metadata.Rows == 0 {
+		fmt.Println("ReadTableDataFromStruct: Metadata.rows is 0")
 		return nil
+	}
+	if rows == 0 {
+		fmt.Println("ReadTableDataFromStruct: rows is 0")
+		return nil
+	} else if rows == -1 {
+		rows = int(metadata.Rows)
 	}
 	table := m.GetTable(db, metadata.Name)
 	if table == nil {
+		fmt.Println("ReadTableDataFromStruct: table is nil")
 		return nil
 	}
 
 	// 3행~, 모든 열을 읽는다
 	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, metadata.Name)
-	req.updateRange(metadata.Name, 1, 1, 3, int(metadata.Rows+3))
+	req.updateRange(metadata.Name, 3, 1, 3+rows, len(metadata.Columns))
 	valueRange := req.Do()
 
-	fmt.Println("Data:-----")
-	for i := range valueRange.Values {
-		for j := range valueRange.Values[i] {
-			fmt.Printf("    Data[%d][%d] = %+v", i, j, valueRange.Values[i][j])
-		}
-		fmt.Println()
+	return valueRange.Values
+}
+
+func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface{}, append bool) bool {
+	if len(values) == 0 {
+		return false
+	}
+	metadata := m.ReadTableMetadataFromStruct(db, values[0])
+	if metadata == nil {
+		return false
+	}
+	table := m.GetTable(db, metadata.Name)
+	if table == nil {
+		return false
 	}
 
-	return valueRange.Values
+	// 3행~, 쓸 수 있는만큼 쓴다
+	req := newSpreadsheetValuesUpdateRequest(m, db.SpreadsheetId, metadata.Name)
+	req.updateRange(metadata, values, append)
+
+	if req.Do()/100 == 2 {
+		// 기록한 행 업데이트
+		fmt.Println("Update rows ", len(values))
+		req.updateRows(metadata, len(values))
+		if req.Do()/100 == 2 {
+			fmt.Println("Updated rows")
+			return true
+		}
+	}
+	return false
 }
 
 // colnames := metadata.Columns
