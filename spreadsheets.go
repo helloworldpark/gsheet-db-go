@@ -290,7 +290,7 @@ func (r *httpBatchUpdateRequest) updateRequest(req *sheets.Request) {
 	r.batchRequest.Requests = append(r.batchRequest.Requests, req)
 }
 
-func (r *httpBatchUpdateRequest) Do() *sheets.Spreadsheet {
+func (r *httpBatchUpdateRequest) Do() (*sheets.Spreadsheet, []*sheets.Response, int) {
 	r.manager.RefreshToken()
 	req := r.manager.service.Spreadsheets.BatchUpdate(r.spreadsheetID, r.batchRequest)
 	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
@@ -298,7 +298,7 @@ func (r *httpBatchUpdateRequest) Do() *sheets.Spreadsheet {
 	if err != nil {
 		panic(err)
 	}
-	return resp.UpdatedSpreadsheet
+	return resp.UpdatedSpreadsheet, resp.Replies, resp.HTTPStatusCode
 }
 
 type httpValueRangeRequest struct {
@@ -308,7 +308,7 @@ type httpValueRangeRequest struct {
 }
 
 const leftmostCol = "A"
-const rightmostCol = "C"
+const rightmostCol = "D"
 const defaultRange = "A1C3"
 
 func newSpreadsheetValuesRequest(manager *SheetManager, spreadsheetID, tableName string) *httpValueRangeRequest {
@@ -319,7 +319,7 @@ func newSpreadsheetValuesRequest(manager *SheetManager, spreadsheetID, tableName
 	}
 }
 
-func base26(x int) string {
+func base26(x int64) string {
 	if x < 0 {
 		panic(fmt.Sprintf("x should not be negative: %d", x))
 	}
@@ -329,26 +329,31 @@ func base26(x int) string {
 	return string('@' + x)
 }
 
-func (r *httpValueRangeRequest) updateRange(tablename string, startRow, startCol, endRow, endCol int) bool {
-	if startRow < 1 || startRow >= endRow {
+// updateRange includes end
+func (r *httpValueRangeRequest) updateRange(tablename string, startRow, startCol, endRow, endCol int64) bool {
+	if startRow < 0 || startRow >= endRow {
 		return false
 	}
 
-	if startCol < 1 || startCol >= endCol {
+	if startCol < 0 || startCol >= endCol {
 		return false
 	}
 
 	r.manager.RefreshToken()
 
 	var ranges string
-	leftmost := base26(startCol)
+	leftmost := base26(startCol + 1)
 	rightmost := rightmostCol
-	if endCol > 3 {
-		rightmost = base26(endCol)
+	if endCol >= 2 {
+		rightmost = base26(endCol + 1)
 	}
+	startRow++
+	endRow++
 
 	ranges = fmt.Sprintf("%s%d:%s%d", leftmost, startRow, rightmost, endRow)
 	ranges = fmt.Sprintf("%s!%s", tablename, ranges)
+
+	fmt.Println("Ranges: ", ranges)
 
 	r.ranges = ranges
 	return true
@@ -389,7 +394,7 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []
 		startRow += int(metadata.Rows)
 	}
 	endRow := startRow + len(values) - 1
-	const startCol = 1
+	const startCol = 0
 	endCol := startCol + len(metadata.Columns) - 1
 
 	for i := range values {
@@ -401,11 +406,13 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []
 	}
 
 	var ranges string
-	leftmost := base26(startCol)
+	leftmost := base26(startCol + 1)
 	rightmost := rightmostCol
-	if endCol > 3 {
-		rightmost = base26(endCol)
+	if endCol > 2 {
+		rightmost = base26(int64(endCol + 1))
 	}
+	startRow++
+	endRow++
 
 	ranges = fmt.Sprintf("%s%d:%s%d", leftmost, startRow, rightmost, endRow)
 	ranges = fmt.Sprintf("%s!%s", metadata.Name, ranges)

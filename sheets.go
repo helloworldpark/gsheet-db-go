@@ -232,9 +232,14 @@ func (m *SheetManager) CreateTableFromStruct(database *sheets.Spreadsheet, struc
 	}
 
 	requests := m.createColumnsFromStruct(newSheet, structInstance, constraints...)
-	updated := m.batchUpdate(database, requests)
-	if updated != nil {
-		return newSheet
+	updated, _, _ := m.batchUpdate(database, requests)
+	if updated == nil {
+		return nil
+	}
+	for _, sheet := range updated.Sheets {
+		if sheet.Properties.SheetId == newSheet.Properties.SheetId {
+			return sheet
+		}
 	}
 	return nil
 }
@@ -261,10 +266,9 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	// 0행~2행, 모든 열을 읽는다
 	// 0행
 	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, tableName)
-	req.updateRange(tableName, 1, 1, 3, tableCols)
+	req.updateRange(tableName, 0, 0, 2, int64(tableCols))
 	valueRange := req.Do()
 
-	fmt.Println("Metadata Values", valueRange.Values)
 	colnames := make([]string, len(table.Data[0].RowData[0].Values))
 	for i := range colnames {
 		colnames[i] = valueRange.Values[0][i].(string)
@@ -277,7 +281,6 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	}
 	// 2행
 	rowsString, ok := valueRange.Values[2][0].(string)
-	fmt.Println("Rows String: ", rowsString)
 	var rows int64
 	if ok {
 		rows, _ = strconv.ParseInt(rowsString, 10, 64)
@@ -297,7 +300,7 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	return metadata
 }
 
-func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interface{}, rows int) [][]interface{} {
+func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interface{}, rows int64) [][]interface{} {
 	metadata := m.ReadTableMetadataFromStruct(db, s)
 	if metadata == nil {
 		fmt.Println("ReadTableDataFromStruct: Metadata is nil")
@@ -311,7 +314,7 @@ func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interfa
 		fmt.Println("ReadTableDataFromStruct: rows is 0")
 		return nil
 	} else if rows == -1 {
-		rows = int(metadata.Rows)
+		rows = metadata.Rows
 	}
 	table := m.GetTable(db, metadata.Name)
 	if table == nil {
@@ -321,10 +324,117 @@ func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interfa
 
 	// 3행~, 모든 열을 읽는다
 	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, metadata.Name)
-	req.updateRange(metadata.Name, 3, 1, 3+rows, len(metadata.Columns))
+	req.updateRange(metadata.Name, 3, 0, 3+rows, int64(len(metadata.Columns))-1)
 	valueRange := req.Do()
 
 	return valueRange.Values
+}
+
+func (m *SheetManager) ReadTableDataWithFilter(db *sheets.Spreadsheet, s interface{}, filters ...map[string]*sheets.FilterCriteria) [][]interface{} {
+	metadata := m.ReadTableMetadataFromStruct(db, s)
+	if metadata == nil {
+		fmt.Println("ReadTableDataFromStruct: Metadata is nil")
+		return nil
+	}
+	if metadata.Rows == 0 {
+		fmt.Println("ReadTableDataFromStruct: Metadata.rows is 0")
+		return nil
+	}
+	table := m.GetTable(db, metadata.Name)
+	if table == nil {
+		fmt.Println("ReadTableDataFromStruct: table is nil")
+		return nil
+	}
+	if len(filters) == 0 {
+		panic("Must provide at least 1 filter")
+	}
+
+	// Add filter view
+	requests := make([]*sheets.Request, 0)
+	for i := range filters {
+		request := &sheets.Request{}
+		tmpTable, _ := m.CreateEmptyTable(db, fmt.Sprintf("Temporary%d", i))
+		criteria := make(map[string]sheets.FilterCriteria)
+		for k, v := range filters[i] {
+			criteria[k] = *v
+		}
+
+		request.AddSlicer = &sheets.AddSlicerRequest{}
+		request.AddSlicer.Slicer = &sheets.Slicer{}
+
+		request.AddSlicer.Slicer.Position = &sheets.EmbeddedObjectPosition{}
+		request.AddSlicer.Slicer.Position.OverlayPosition = &sheets.OverlayPosition{}
+		request.AddSlicer.Slicer.Position.OverlayPosition.AnchorCell = &sheets.GridCoordinate{}
+		request.AddSlicer.Slicer.Position.OverlayPosition.AnchorCell.RowIndex = 0
+		request.AddSlicer.Slicer.Position.OverlayPosition.AnchorCell.ColumnIndex = 0
+		request.AddSlicer.Slicer.Position.OverlayPosition.AnchorCell.SheetId = tmpTable.Properties.SheetId
+
+		request.AddSlicer.Slicer.Spec = &sheets.SlicerSpec{}
+		request.AddSlicer.Slicer.Spec.ApplyToPivotTables = false
+		for k, v := range filters[i] {
+			e, _ := strconv.ParseInt(k, 10, 64)
+			request.AddSlicer.Slicer.Spec.ColumnIndex = e
+			request.AddSlicer.Slicer.Spec.FilterCriteria = v
+		}
+		request.AddSlicer.Slicer.Spec.DataRange = &sheets.GridRange{}
+		request.AddSlicer.Slicer.Spec.DataRange.SheetId = table.Properties.SheetId
+		request.AddSlicer.Slicer.Spec.DataRange.StartColumnIndex = 0
+		request.AddSlicer.Slicer.Spec.DataRange.EndColumnIndex = int64(len(metadata.Columns)) - 1
+		request.AddSlicer.Slicer.Spec.DataRange.StartRowIndex = 4
+		request.AddSlicer.Slicer.Spec.DataRange.EndRowIndex = metadata.Rows + 4
+
+		// request.AddFilterView = &sheets.AddFilterViewRequest{}
+		// request.AddFilterView.Filter = &sheets.FilterView{}
+		// request.AddFilterView.Filter.Criteria = criteria
+		// request.AddFilterView.Filter.Range = &sheets.GridRange{}
+		// request.AddFilterView.Filter.Range.SheetId = table.Properties.SheetId
+		// request.AddFilterView.Filter.Range.StartRowIndex = 4
+		// request.AddFilterView.Filter.Range.EndRowIndex = metadata.Rows + 3 - 1
+		// request.AddFilterView.Filter.Range.StartColumnIndex = 0
+		// request.AddFilterView.Filter.Range.EndColumnIndex = int64(len(metadata.Columns)) - 1
+
+		// sortSpec := &sheets.SortSpec{}
+		// sortSpec.SortOrder = "ASCENDING"
+		// sortSpec.DimensionIndex = 1
+		// request.AddFilterView.Filter.SortSpecs = append(request.AddFilterView.Filter.SortSpecs, sortSpec)
+
+		// request.SetBasicFilter = &sheets.SetBasicFilterRequest{}
+		// request.SetBasicFilter.Filter = &sheets.BasicFilter{}
+		// request.SetBasicFilter.Filter.Criteria = criteria
+
+		// request.SetBasicFilter.Filter.Range = &sheets.GridRange{}
+		// request.SetBasicFilter.Filter.Range.SheetId = table.Properties.SheetId
+		// request.SetBasicFilter.Filter.Range.StartRowIndex = 4
+		// request.AddFilterView.Filter.Range.EndRowIndex = metadata.Rows + 3 - 1
+		// request.SetBasicFilter.Filter.Range.StartColumnIndex = 0
+		// request.AddFilterView.Filter.Range.EndColumnIndex = int64(len(metadata.Columns)) - 1
+
+		requests = append(requests, request)
+	}
+	fmt.Println("JELREJJELJLE")
+	sheet, resp, statusCode := m.batchUpdate(db, requests)
+	if statusCode/100 != 2 {
+		fmt.Printf("ReadTableDataFromStruct: cannot add filtered slice view: %+v\n", sheet)
+		return nil
+	}
+
+	// Compose Data Range
+	c1 := resp[0].AddSlicer.Slicer.Spec.DataRange.StartColumnIndex
+	cn := resp[0].AddSlicer.Slicer.Spec.DataRange.EndColumnIndex
+	r1 := resp[0].AddSlicer.Slicer.Spec.DataRange.StartRowIndex
+	rn := resp[0].AddSlicer.Slicer.Spec.DataRange.EndRowIndex
+
+	for i := range resp {
+		r1 = maximum64(r1, resp[i].AddSlicer.Slicer.Spec.DataRange.StartRowIndex)
+		rn = mininum64(rn, resp[i].AddSlicer.Slicer.Spec.DataRange.EndRowIndex)
+	}
+
+	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, metadata.Name)
+	req.updateRange(metadata.Name, r1, c1, rn, cn)
+	valueRange := req.Do()
+
+	return valueRange.Values
+
 }
 
 func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface{}, append bool) bool {
@@ -444,3 +554,17 @@ func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface
 
 // 	data[0].Values[i] = v
 // }
+
+func mininum64(x, y int64) int64 {
+	if x < y {
+		return x
+	}
+	return y
+}
+
+func maximum64(x, y int64) int64 {
+	if x < y {
+		return y
+	}
+	return x
+}

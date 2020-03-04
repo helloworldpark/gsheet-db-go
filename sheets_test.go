@@ -217,7 +217,34 @@ func TestCreateTableFromStructs(t *testing.T) {
 
 func TestBase26(t *testing.T) {
 	for i := 1; i <= 26*26*3+26*2+4; i++ {
-		fmt.Printf("[%04d] = %s\n--------------\n", i, base26(i))
+		fmt.Printf("[%04d] = %s\n--------------\n", i, base26(int64(i)))
+	}
+}
+
+func TestReadTable(t *testing.T) {
+	initPrimitiveKind()
+
+	manager := NewSheetManager(jsonPath)
+	db := manager.FindDatabase("testdb")
+	if db == nil {
+		t.Fatalf("Sheet %s is nil", "testdb")
+	}
+
+	// Find or make table
+	table := manager.GetTable(db, "TestStructMeme")
+	if table == nil {
+		table = manager.CreateTableFromStruct(db, TestStructMeme{})
+		fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
+	} else {
+		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
+	}
+
+	tableValue := manager.ReadTableDataFromStruct(db, TestStructMeme{}, -1)
+	for i := 0; i < len(tableValue); i++ {
+		for j := 0; j < len(tableValue[i]); j++ {
+			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
+		}
+		fmt.Printf("\n")
 	}
 }
 
@@ -270,6 +297,48 @@ func TestReadAndWriteTable(t *testing.T) {
 	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 
 	tableValue := manager.ReadTableDataFromStruct(db, TestStructMeme{}, -1)
+	for i := 0; i < len(tableValue); i++ {
+		for j := 0; j < len(tableValue[i]); j++ {
+			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
+		}
+		fmt.Printf("\n")
+	}
+}
+
+func TestReadTableWithFilter(t *testing.T) {
+	initPrimitiveKind()
+
+	manager := NewSheetManager(jsonPath)
+	db := manager.FindDatabase("testdb")
+	if db == nil {
+		t.Fatalf("Sheet %s is nil", "testdb")
+	}
+
+	// Find or make table
+	table := manager.GetTable(db, "TestStructMeme")
+	if table == nil {
+		table = manager.CreateTableFromStruct(db, TestStructMeme{})
+		fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
+	} else {
+		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
+	}
+
+	tableMeta := manager.ReadTableMetadataFromStruct(db, TestStructMeme{})
+	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
+
+	filter := &sheets.FilterCriteria{}
+	filter.Condition = &sheets.BooleanCondition{}
+	filter.Condition.Type = "NUMBER_GREATER"
+	filter.Condition.Values = make([]*sheets.ConditionValue, 1)
+	filter.Condition.Values[0] = &sheets.ConditionValue{}
+	filter.Condition.Values[0].UserEnteredValue = "0.5"
+
+	filterMap := make(map[string]*sheets.FilterCriteria)
+	filterMap["3"] = filter
+
+	tableValue := manager.ReadTableDataWithFilter(db, TestStructMeme{}, filterMap)
+	fmt.Println("Raw::::")
+	fmt.Println(tableValue)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
