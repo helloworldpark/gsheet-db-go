@@ -257,7 +257,7 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	tableCols := reflect.TypeOf(s).NumField()
 
 	// DB를 갱신
-	db = m.SyncDatabaseFromGoogle(db)
+	db = m.SynchronizeFromGoogle(db)
 	table := m.GetTable(db, tableName)
 	if table == nil {
 		return nil

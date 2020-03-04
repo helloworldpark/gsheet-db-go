@@ -167,14 +167,15 @@ func (m *SheetManager) DeleteDatabase(title string) bool {
 	return m.DeleteSpreadsheet(db.SpreadsheetId)
 }
 
-func (m *SheetManager) SyncDatabaseFromGoogle(db *sheets.Spreadsheet) *sheets.Spreadsheet {
+// SynchronizeFromGoogle Synchronize data from google
+func (m *SheetManager) SynchronizeFromGoogle(db *sheets.Spreadsheet) *sheets.Spreadsheet {
 	if db == nil {
 		return nil
 	}
 
 	db = m.GetSpreadsheet(db.SpreadsheetId)
 	if db == nil {
-		fmt.Printf("[SheetManager]SyncDatabaseToGoogle: DB is nil")
+		fmt.Printf("[SheetManager] SyncDatabaseToGoogle: DB is nil")
 		return nil
 	}
 	return db
@@ -309,7 +310,7 @@ type httpValueRangeRequest struct {
 
 const leftmostCol = "A"
 const rightmostCol = "D"
-const defaultRange = "A1C3"
+const defaultRange = "A1D3"
 
 func newSpreadsheetValuesRequest(manager *SheetManager, spreadsheetID, tableName string) *httpValueRangeRequest {
 	return &httpValueRangeRequest{
