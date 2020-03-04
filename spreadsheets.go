@@ -349,7 +349,6 @@ func (r *httpValueRangeRequest) updateRange(tablename string, startRow, startCol
 
 	ranges = fmt.Sprintf("%s%d:%s%d", leftmost, startRow, rightmost, endRow)
 	ranges = fmt.Sprintf("%s!%s", tablename, ranges)
-	fmt.Println("Value Range: ", ranges)
 
 	r.ranges = ranges
 	return true
@@ -412,7 +411,6 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []
 	ranges = fmt.Sprintf("%s!%s", metadata.Name, ranges)
 
 	r.ranges = ranges
-	fmt.Println("WRITE")
 	return true
 }
 
@@ -420,7 +418,6 @@ func (r *httpUpdateValuesRequest) updateRows(metadata *TableMetadata, adding int
 	unpackedValues := make([][]interface{}, 1)
 	unpackedValues[0] = make([]interface{}, 1)
 	unpackedValues[0][0] = metadata.Rows + int64(adding)
-	fmt.Println("ADDING ", unpackedValues)
 
 	r.ranges = fmt.Sprintf("%s!A3", metadata.Name)
 	r.updatingValues = unpackedValues
@@ -441,8 +438,5 @@ func (r *httpUpdateValuesRequest) Do() int {
 		fmt.Println(r)
 		panic(err)
 	}
-	fmt.Println(updatedRange.UpdatedCells)
-	fmt.Println(updatedRange.UpdatedData.Range)
-	fmt.Println(updatedRange.UpdatedData.Values)
 	return updatedRange.HTTPStatusCode
 }

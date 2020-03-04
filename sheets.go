@@ -32,7 +32,10 @@ func (m *SheetManager) CreateEmptyTable(database *sheets.Spreadsheet, tableName 
 	request[0].AddSheet = &sheets.AddSheetRequest{}
 	request[0].AddSheet.Properties = &sheets.SheetProperties{}
 	request[0].AddSheet.Properties.Title = tableName
-	newSheet := m.batchUpdate(database, request)
+	newSheet, _, statusCode := m.batchUpdate(database, request)
+	if statusCode/100 != 2 {
+		return nil, false
+	}
 	return newSheet.Sheets[len(newSheet.Sheets)-1], true
 }
 
@@ -73,11 +76,11 @@ func (m *SheetManager) DeleteTable(database *sheets.Spreadsheet, tableName strin
 	request[0] = &sheets.Request{}
 	request[0].DeleteSheet = &sheets.DeleteSheetRequest{}
 	request[0].DeleteSheet.SheetId = sheetToDelete.Properties.SheetId
-	resp := m.batchUpdate(database, request)
+	resp, _, _ := m.batchUpdate(database, request)
 	return resp != nil
 }
 
-func (m *SheetManager) batchUpdate(database *sheets.Spreadsheet, requests []*sheets.Request) *sheets.Spreadsheet {
+func (m *SheetManager) batchUpdate(database *sheets.Spreadsheet, requests []*sheets.Request) (*sheets.Spreadsheet, []*sheets.Response, int) {
 	return newSpreadsheetBatchUpdateRequest(m, database.SpreadsheetId, requests...).Do()
 }
 
@@ -337,20 +340,20 @@ func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface
 		return false
 	}
 
-	// 3행~, 쓸 수 있는만큼 쓴다
+	// 4행~, 쓸 수 있는만큼 쓴다
 	req := newSpreadsheetValuesUpdateRequest(m, db.SpreadsheetId, metadata.Name)
 	req.updateRange(metadata, values, append)
-
-	if req.Do()/100 == 2 {
-		// 기록한 행 업데이트
-		fmt.Println("Update rows ", len(values))
-		req.updateRows(metadata, len(values))
-		if req.Do()/100 == 2 {
-			fmt.Println("Updated rows")
-			return true
-		}
+	if req.Do()/100 != 2 {
+		return false
 	}
-	return false
+
+	// 기록한 행 업데이트
+	req.updateRows(metadata, len(values))
+	if req.Do()/100 != 2 {
+		return false
+	}
+	fmt.Println("Updated rows ", len(values))
+	return true
 }
 
 // colnames := metadata.Columns

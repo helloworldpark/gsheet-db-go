@@ -27,7 +27,7 @@ func CreateJWTToken(jsonPath string) *oauth2.Token {
 	if cred != nil && false {
 		tokenSource = cred.TokenSource
 	} else if len(jsonKey) > 0 {
-		cfg, err := google.JWTConfigFromJSON(jsonKey, drive.DriveScope, drive.DriveFileScope)
+		cfg, err := google.JWTConfigFromJSON(jsonKey, drive.DriveScope, drive.DriveFileScope, sheets.SpreadsheetsScope)
 		if err != nil {
 			panic(err)
 		}

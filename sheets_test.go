@@ -5,7 +5,18 @@ import (
 	"math/rand"
 	"reflect"
 	"testing"
+
+	"google.golang.org/api/sheets/v4"
 )
+
+type TestStructMeme struct {
+	Name1 int16
+	Name2 int32
+	Name3 int
+	Name4 float64
+	Name5 string
+	Name6 bool
+}
 
 // create, get, delete
 func TestCreateGetDeleteSpreadsheet(t *testing.T) {
@@ -189,14 +200,6 @@ func TestStructsReflection(t *testing.T) {
 }
 
 func TestCreateTableFromStructs(t *testing.T) {
-	type TestStructMeme struct {
-		Name1 int16
-		Name2 int32
-		Name3 int
-		Name4 float64
-		Name5 string
-		Name6 bool
-	}
 	initPrimitiveKind()
 
 	manager := NewSheetManager(jsonPath)
@@ -219,14 +222,6 @@ func TestBase26(t *testing.T) {
 }
 
 func TestReadAndWriteTable(t *testing.T) {
-	type TestStructMeme struct {
-		Name1 int16
-		Name2 int32
-		Name3 int
-		Name4 float64
-		Name5 string
-		Name6 bool
-	}
 	initPrimitiveKind()
 
 	manager := NewSheetManager(jsonPath)
