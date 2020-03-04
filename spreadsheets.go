@@ -12,6 +12,8 @@ import (
 )
 
 const dbFileStart = "database_file_"
+const tableDataStartRowIndex = 3
+const tableDataStartColumnIndex = 0
 
 // SheetManager Manage OAuth2 token lifecycle
 type SheetManager struct {
@@ -308,10 +310,6 @@ type httpValueRangeRequest struct {
 	spreadsheetID string
 }
 
-const leftmostCol = "A"
-const rightmostCol = "D"
-const defaultRange = "A1D3"
-
 func newSpreadsheetValuesRequest(manager *SheetManager, spreadsheetID, tableName string) *httpValueRangeRequest {
 	return &httpValueRangeRequest{
 		manager:       manager,
@@ -320,43 +318,11 @@ func newSpreadsheetValuesRequest(manager *SheetManager, spreadsheetID, tableName
 	}
 }
 
-func base26(x int64) string {
-	if x < 0 {
-		panic(fmt.Sprintf("x should not be negative: %d", x))
-	}
-	if x > 26 {
-		panic(fmt.Sprintf("Unsupported number %d", x))
-	}
-	return string('@' + x)
-}
-
-// updateRange includes end
+// updateRange does include end
 func (r *httpValueRangeRequest) updateRange(tablename string, startRow, startCol, endRow, endCol int64) bool {
-	if startRow < 0 || startRow >= endRow {
-		return false
-	}
-
-	if startCol < 0 || startCol >= endCol {
-		return false
-	}
-
+	ranges := newCellRange(tablename, startRow, startCol, endRow, endCol)
 	r.manager.RefreshToken()
-
-	var ranges string
-	leftmost := base26(startCol + 1)
-	rightmost := rightmostCol
-	if endCol >= 2 {
-		rightmost = base26(endCol + 1)
-	}
-	startRow++
-	endRow++
-
-	ranges = fmt.Sprintf("%s%d:%s%d", leftmost, startRow, rightmost, endRow)
-	ranges = fmt.Sprintf("%s!%s", tablename, ranges)
-
-	fmt.Println("Ranges: ", ranges)
-
-	r.ranges = ranges
+	r.ranges = ranges.String()
 	return true
 }
 
@@ -386,17 +352,14 @@ func newSpreadsheetValuesUpdateRequest(manager *SheetManager, spreadsheetID, tab
 	}
 }
 
-func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []interface{}, appendData bool) bool {
+func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []interface{}) bool {
 	if len(values) == 0 {
 		return false
 	}
-	startRow := 4
-	if appendData {
-		startRow += int(metadata.Rows)
-	}
-	endRow := startRow + len(values) - 1
-	const startCol = 0
-	endCol := startCol + len(metadata.Columns) - 1
+	startRow := metadata.Rows + tableDataStartRowIndex
+	endRow := startRow + int64(len(values))
+	const startCol = tableDataStartColumnIndex
+	endCol := int64(startCol + len(metadata.Columns))
 
 	for i := range values {
 		r.updatingValues = append(r.updatingValues, make([]interface{}, 0))
@@ -406,19 +369,9 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []
 		}
 	}
 
-	var ranges string
-	leftmost := base26(startCol + 1)
-	rightmost := rightmostCol
-	if endCol > 2 {
-		rightmost = base26(int64(endCol + 1))
-	}
-	startRow++
-	endRow++
-
-	ranges = fmt.Sprintf("%s%d:%s%d", leftmost, startRow, rightmost, endRow)
-	ranges = fmt.Sprintf("%s!%s", metadata.Name, ranges)
-
-	r.ranges = ranges
+	ranges := newCellRange(metadata.Name, startRow, startCol, endRow, endCol)
+	fmt.Println("httpUpdateValuesRequest ", ranges)
+	r.ranges = ranges.String()
 	return true
 }
 

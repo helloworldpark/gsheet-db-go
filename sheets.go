@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"time"
 
 	"google.golang.org/api/sheets/v4"
 )
@@ -269,6 +270,9 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	req.updateRange(tableName, 0, 0, 2, int64(tableCols))
 	valueRange := req.Do()
 
+	fmt.Println("READ META")
+	fmt.Println(valueRange.Values)
+
 	colnames := make([]string, len(table.Data[0].RowData[0].Values))
 	for i := range colnames {
 		colnames[i] = valueRange.Values[0][i].(string)
@@ -323,6 +327,7 @@ func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interfa
 	}
 
 	// 3행~, 모든 열을 읽는다
+	fmt.Println("METADATA", metadata)
 	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, metadata.Name)
 	req.updateRange(metadata.Name, 3, 0, 3+rows, int64(len(metadata.Columns))-1)
 	valueRange := req.Do()
@@ -353,11 +358,7 @@ func (m *SheetManager) ReadTableDataWithFilter(db *sheets.Spreadsheet, s interfa
 	requests := make([]*sheets.Request, 0)
 	for i := range filters {
 		request := &sheets.Request{}
-		tmpTable, _ := m.CreateEmptyTable(db, fmt.Sprintf("Temporary%d", i))
-		criteria := make(map[string]sheets.FilterCriteria)
-		for k, v := range filters[i] {
-			criteria[k] = *v
-		}
+		tmpTable, _ := m.CreateEmptyTable(db, fmt.Sprintf("Temporary%d", time.Now().Unix()))
 
 		request.AddSlicer = &sheets.AddSlicerRequest{}
 		request.AddSlicer.Slicer = &sheets.Slicer{}
@@ -379,40 +380,22 @@ func (m *SheetManager) ReadTableDataWithFilter(db *sheets.Spreadsheet, s interfa
 		request.AddSlicer.Slicer.Spec.DataRange = &sheets.GridRange{}
 		request.AddSlicer.Slicer.Spec.DataRange.SheetId = table.Properties.SheetId
 		request.AddSlicer.Slicer.Spec.DataRange.StartColumnIndex = 0
-		request.AddSlicer.Slicer.Spec.DataRange.EndColumnIndex = int64(len(metadata.Columns)) - 1
+		request.AddSlicer.Slicer.Spec.DataRange.EndColumnIndex = int64(len(metadata.Columns))
 		request.AddSlicer.Slicer.Spec.DataRange.StartRowIndex = 4
 		request.AddSlicer.Slicer.Spec.DataRange.EndRowIndex = metadata.Rows + 4
-
-		// request.AddFilterView = &sheets.AddFilterViewRequest{}
-		// request.AddFilterView.Filter = &sheets.FilterView{}
-		// request.AddFilterView.Filter.Criteria = criteria
-		// request.AddFilterView.Filter.Range = &sheets.GridRange{}
-		// request.AddFilterView.Filter.Range.SheetId = table.Properties.SheetId
-		// request.AddFilterView.Filter.Range.StartRowIndex = 4
-		// request.AddFilterView.Filter.Range.EndRowIndex = metadata.Rows + 3 - 1
-		// request.AddFilterView.Filter.Range.StartColumnIndex = 0
-		// request.AddFilterView.Filter.Range.EndColumnIndex = int64(len(metadata.Columns)) - 1
-
-		// sortSpec := &sheets.SortSpec{}
-		// sortSpec.SortOrder = "ASCENDING"
-		// sortSpec.DimensionIndex = 1
-		// request.AddFilterView.Filter.SortSpecs = append(request.AddFilterView.Filter.SortSpecs, sortSpec)
-
-		// request.SetBasicFilter = &sheets.SetBasicFilterRequest{}
-		// request.SetBasicFilter.Filter = &sheets.BasicFilter{}
-		// request.SetBasicFilter.Filter.Criteria = criteria
-
-		// request.SetBasicFilter.Filter.Range = &sheets.GridRange{}
-		// request.SetBasicFilter.Filter.Range.SheetId = table.Properties.SheetId
-		// request.SetBasicFilter.Filter.Range.StartRowIndex = 4
-		// request.AddFilterView.Filter.Range.EndRowIndex = metadata.Rows + 3 - 1
-		// request.SetBasicFilter.Filter.Range.StartColumnIndex = 0
-		// request.AddFilterView.Filter.Range.EndColumnIndex = int64(len(metadata.Columns)) - 1
 
 		requests = append(requests, request)
 	}
 	fmt.Println("JELREJJELJLE")
 	sheet, resp, statusCode := m.batchUpdate(db, requests)
+	defer func() {
+		// Remove slicer
+		for i := range resp {
+			tmpTableName := fmt.Sprintf("Temporary%d", i)
+			m.DeleteTable(db, tmpTableName)
+		}
+	}()
+
 	if statusCode/100 != 2 {
 		fmt.Printf("ReadTableDataFromStruct: cannot add filtered slice view: %+v\n", sheet)
 		return nil
@@ -430,14 +413,14 @@ func (m *SheetManager) ReadTableDataWithFilter(db *sheets.Spreadsheet, s interfa
 	}
 
 	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, metadata.Name)
+	fmt.Println("REQUUUUU: ", req.ranges)
 	req.updateRange(metadata.Name, r1, c1, rn, cn)
 	valueRange := req.Do()
 
 	return valueRange.Values
-
 }
 
-func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface{}, append bool) bool {
+func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface{}) bool {
 	if len(values) == 0 {
 		return false
 	}
@@ -452,7 +435,7 @@ func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface
 
 	// 4행~, 쓸 수 있는만큼 쓴다
 	req := newSpreadsheetValuesUpdateRequest(m, db.SpreadsheetId, metadata.Name)
-	req.updateRange(metadata, values, append)
+	req.updateRange(metadata, values)
 	if req.Do()/100 != 2 {
 		return false
 	}
@@ -554,17 +537,3 @@ func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface
 
 // 	data[0].Values[i] = v
 // }
-
-func mininum64(x, y int64) int64 {
-	if x < y {
-		return x
-	}
-	return y
-}
-
-func maximum64(x, y int64) int64 {
-	if x < y {
-		return y
-	}
-	return x
-}
