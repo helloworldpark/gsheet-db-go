@@ -186,6 +186,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	return requests
 }
 
+// TableMetadata Metadata of the table
 type TableMetadata struct {
 	Name        string
 	Columns     []string
@@ -194,7 +195,8 @@ type TableMetadata struct {
 	Constraints string
 }
 
-func (m *SheetManager) ReadTableMetadata(db *sheets.Spreadsheet, s interface{}) *TableMetadata {
+// GetTableMetadata Reads table's metadata
+func (m *SheetManager) GetTableMetadata(db *sheets.Spreadsheet, s interface{}) *TableMetadata {
 	tableName := reflect.TypeOf(s).Name()
 	tableCols := reflect.TypeOf(s).NumField()
 
@@ -242,25 +244,29 @@ func (m *SheetManager) ReadTableMetadata(db *sheets.Spreadsheet, s interface{}) 
 	return metadata
 }
 
-func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interface{}, rows int64) ([][]interface{}, *TableMetadata) {
-	metadata := m.ReadTableMetadata(db, s)
+// Predicate Check if the given interface fits the condition
+type Predicate func(interface{}) bool
+
+// SelectRow Selects all the rows from the table
+func (m *SheetManager) SelectRow(db *sheets.Spreadsheet, s interface{}, rows int64) ([][]interface{}, *TableMetadata) {
+	metadata := m.GetTableMetadata(db, s)
 	if metadata == nil {
-		fmt.Println("ReadTableDataFromStruct: Metadata is nil")
+		fmt.Println("SelectRow: Metadata is nil")
 		return nil, nil
 	}
 	if metadata.Rows == 0 {
-		fmt.Println("ReadTableDataFromStruct: Metadata.rows is 0")
+		fmt.Println("SelectRow: Metadata.rows is 0")
 		return nil, nil
 	}
 	if rows == 0 {
-		fmt.Println("ReadTableDataFromStruct: rows is 0")
+		fmt.Println("SelectRow: rows is 0")
 		return nil, nil
 	} else if rows == -1 {
 		rows = metadata.Rows
 	}
 	table := m.GetTable(db, metadata.Name)
 	if table == nil {
-		fmt.Println("ReadTableDataFromStruct: table is nil")
+		fmt.Println("SelectRow: table is nil")
 		return nil, nil
 	}
 
@@ -272,10 +278,11 @@ func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interfa
 	return valueRange.Values, nil
 }
 
-type Predicate func(interface{}) bool
-
-func (m *SheetManager) ReadTableDataWithFilter(db *sheets.Spreadsheet, s interface{}, filters map[int]Predicate) [][]interface{} {
-	fullData, _ := m.ReadTableDataFromStruct(db, s, -1)
+// SelectRowWithFilter Select rows satisfying filter
+// filters.key: int, column index
+// filters.value: Predicate, whether to select or not
+func (m *SheetManager) SelectRowWithFilter(db *sheets.Spreadsheet, s interface{}, filters map[int]Predicate) [][]interface{} {
+	fullData, _ := m.SelectRow(db, s, -1)
 	if len(filters) == 0 {
 		return fullData
 	}
@@ -298,11 +305,12 @@ func (m *SheetManager) ReadTableDataWithFilter(db *sheets.Spreadsheet, s interfa
 	return filtered
 }
 
-func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface{}) bool {
+// Upsert  Upserts given `values`. Returns true if success.
+func (m *SheetManager) Upsert(db *sheets.Spreadsheet, values []interface{}) bool {
 	if len(values) == 0 {
 		return false
 	}
-	metadata := m.ReadTableMetadata(db, values[0])
+	metadata := m.GetTableMetadata(db, values[0])
 	if metadata == nil {
 		return false
 	}
@@ -311,7 +319,7 @@ func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface
 		return false
 	}
 
-	// 4행~, 쓸 수 있는만큼 쓴다
+	// 3행~, 쓸 수 있는만큼 쓴다
 	req := newSpreadsheetValuesUpdateRequest(m, db.SpreadsheetId, metadata.Name)
 	req.updateRange(metadata, values)
 	if req.Do()/100 != 2 {
@@ -323,7 +331,6 @@ func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface
 	if req.Do()/100 != 2 {
 		return false
 	}
-	fmt.Println("Updated rows ", len(values))
 	return true
 }
 

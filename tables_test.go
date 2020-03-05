@@ -182,7 +182,7 @@ func TestCreateTableFromStructs(t *testing.T) {
 	table := manager.CreateTable(db, "", nil, TestStructMeme{})
 	fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
 
-	tableMeta := manager.ReadTableMetadata(db, TestStructMeme{})
+	tableMeta := manager.GetTableMetadata(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 }
 
@@ -232,7 +232,7 @@ func TestReadTable(t *testing.T) {
 		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
 	}
 
-	tableValue, _ := manager.ReadTableDataFromStruct(db, TestStructMeme{}, -1)
+	tableValue, _ := manager.SelectRow(db, TestStructMeme{}, -1)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
@@ -279,17 +279,17 @@ func TestReadAndWriteTable(t *testing.T) {
 
 		values = append(values, meme)
 	}
-	didSuccess := manager.WriteTableData(db, values)
+	didSuccess := manager.Upsert(db, values)
 	if didSuccess {
 		fmt.Printf("Table %s[%d] Success Write %d Data\n", table.Properties.Title, table.Properties.SheetId, len(values))
 	} else {
 		fmt.Printf("Table %s[%d] Failed  Write %d Data\n", table.Properties.Title, table.Properties.SheetId, len(values))
 	}
 
-	tableMeta := manager.ReadTableMetadata(db, TestStructMeme{})
+	tableMeta := manager.GetTableMetadata(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 
-	tableValue, _ := manager.ReadTableDataFromStruct(db, TestStructMeme{}, -1)
+	tableValue, _ := manager.SelectRow(db, TestStructMeme{}, -1)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
@@ -316,7 +316,7 @@ func TestReadTableWithFilter(t *testing.T) {
 		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
 	}
 
-	tableMeta := manager.ReadTableMetadata(db, TestStructMeme{})
+	tableMeta := manager.GetTableMetadata(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 
 	filter := func(field interface{}) bool {
@@ -332,7 +332,7 @@ func TestReadTableWithFilter(t *testing.T) {
 	filterMap[5] = filter
 	filterMap[0] = filter2
 
-	tableValue := manager.ReadTableDataWithFilter(db, TestStructMeme{}, filterMap)
+	tableValue := manager.SelectRowWithFilter(db, TestStructMeme{}, filterMap)
 	fmt.Println("Raw::::")
 	for i, v := range tableValue {
 		fmt.Println(i, v)
