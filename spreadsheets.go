@@ -370,7 +370,6 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []
 	}
 
 	ranges := newCellRange(metadata.Name, startRow, startCol, endRow, endCol)
-	fmt.Println("httpUpdateValuesRequest ", ranges)
 	r.ranges = ranges.String()
 	return true
 }

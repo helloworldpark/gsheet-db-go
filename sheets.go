@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"time"
 
 	"google.golang.org/api/sheets/v4"
 )
@@ -304,120 +303,60 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	return metadata
 }
 
-func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interface{}, rows int64) [][]interface{} {
+func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interface{}, rows int64) ([][]interface{}, *TableMetadata) {
 	metadata := m.ReadTableMetadataFromStruct(db, s)
 	if metadata == nil {
 		fmt.Println("ReadTableDataFromStruct: Metadata is nil")
-		return nil
+		return nil, nil
 	}
 	if metadata.Rows == 0 {
 		fmt.Println("ReadTableDataFromStruct: Metadata.rows is 0")
-		return nil
+		return nil, nil
 	}
 	if rows == 0 {
 		fmt.Println("ReadTableDataFromStruct: rows is 0")
-		return nil
+		return nil, nil
 	} else if rows == -1 {
 		rows = metadata.Rows
 	}
 	table := m.GetTable(db, metadata.Name)
 	if table == nil {
 		fmt.Println("ReadTableDataFromStruct: table is nil")
-		return nil
+		return nil, nil
 	}
 
 	// 3행~, 모든 열을 읽는다
-	fmt.Println("METADATA", metadata)
 	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, metadata.Name)
 	req.updateRange(metadata.Name, 3, 0, 3+rows, int64(len(metadata.Columns))-1)
 	valueRange := req.Do()
 
-	return valueRange.Values
+	return valueRange.Values, nil
 }
 
-func (m *SheetManager) ReadTableDataWithFilter(db *sheets.Spreadsheet, s interface{}, filters ...map[string]*sheets.FilterCriteria) [][]interface{} {
-	metadata := m.ReadTableMetadataFromStruct(db, s)
-	if metadata == nil {
-		fmt.Println("ReadTableDataFromStruct: Metadata is nil")
-		return nil
-	}
-	if metadata.Rows == 0 {
-		fmt.Println("ReadTableDataFromStruct: Metadata.rows is 0")
-		return nil
-	}
-	table := m.GetTable(db, metadata.Name)
-	if table == nil {
-		fmt.Println("ReadTableDataFromStruct: table is nil")
-		return nil
-	}
+type Predicate func(interface{}) bool
+
+func (m *SheetManager) ReadTableDataWithFilter(db *sheets.Spreadsheet, s interface{}, filters map[int]Predicate) [][]interface{} {
+	fullData, _ := m.ReadTableDataFromStruct(db, s, -1)
 	if len(filters) == 0 {
-		panic("Must provide at least 1 filter")
+		return fullData
+	}
+	if len(fullData) == 0 {
+		return fullData
 	}
 
-	// Add filter view
-	requests := make([]*sheets.Request, 0)
-	for i := range filters {
-		request := &sheets.Request{}
-		tmpTable, _ := m.CreateEmptyTable(db, fmt.Sprintf("Temporary%d", time.Now().Unix()))
-
-		request.AddSlicer = &sheets.AddSlicerRequest{}
-		request.AddSlicer.Slicer = &sheets.Slicer{}
-
-		request.AddSlicer.Slicer.Position = &sheets.EmbeddedObjectPosition{}
-		request.AddSlicer.Slicer.Position.OverlayPosition = &sheets.OverlayPosition{}
-		request.AddSlicer.Slicer.Position.OverlayPosition.AnchorCell = &sheets.GridCoordinate{}
-		request.AddSlicer.Slicer.Position.OverlayPosition.AnchorCell.RowIndex = 0
-		request.AddSlicer.Slicer.Position.OverlayPosition.AnchorCell.ColumnIndex = 0
-		request.AddSlicer.Slicer.Position.OverlayPosition.AnchorCell.SheetId = tmpTable.Properties.SheetId
-
-		request.AddSlicer.Slicer.Spec = &sheets.SlicerSpec{}
-		request.AddSlicer.Slicer.Spec.ApplyToPivotTables = false
-		for k, v := range filters[i] {
-			e, _ := strconv.ParseInt(k, 10, 64)
-			request.AddSlicer.Slicer.Spec.ColumnIndex = e
-			request.AddSlicer.Slicer.Spec.FilterCriteria = v
+	filtered := make([][]interface{}, 0)
+	for i := range fullData {
+		appropriate := true
+		for j := range fullData[i] {
+			if predicate, ok := filters[j]; ok {
+				appropriate = appropriate && predicate(fullData[i][j])
+			}
 		}
-		request.AddSlicer.Slicer.Spec.DataRange = &sheets.GridRange{}
-		request.AddSlicer.Slicer.Spec.DataRange.SheetId = table.Properties.SheetId
-		request.AddSlicer.Slicer.Spec.DataRange.StartColumnIndex = 0
-		request.AddSlicer.Slicer.Spec.DataRange.EndColumnIndex = int64(len(metadata.Columns))
-		request.AddSlicer.Slicer.Spec.DataRange.StartRowIndex = 4
-		request.AddSlicer.Slicer.Spec.DataRange.EndRowIndex = metadata.Rows + 4
-
-		requests = append(requests, request)
-	}
-	fmt.Println("JELREJJELJLE")
-	sheet, resp, statusCode := m.batchUpdate(db, requests)
-	defer func() {
-		// Remove slicer
-		for i := range resp {
-			tmpTableName := fmt.Sprintf("Temporary%d", i)
-			m.DeleteTable(db, tmpTableName)
+		if appropriate {
+			filtered = append(filtered, fullData[i])
 		}
-	}()
-
-	if statusCode/100 != 2 {
-		fmt.Printf("ReadTableDataFromStruct: cannot add filtered slice view: %+v\n", sheet)
-		return nil
 	}
-
-	// Compose Data Range
-	c1 := resp[0].AddSlicer.Slicer.Spec.DataRange.StartColumnIndex
-	cn := resp[0].AddSlicer.Slicer.Spec.DataRange.EndColumnIndex
-	r1 := resp[0].AddSlicer.Slicer.Spec.DataRange.StartRowIndex
-	rn := resp[0].AddSlicer.Slicer.Spec.DataRange.EndRowIndex
-
-	for i := range resp {
-		r1 = maximum64(r1, resp[i].AddSlicer.Slicer.Spec.DataRange.StartRowIndex)
-		rn = mininum64(rn, resp[i].AddSlicer.Slicer.Spec.DataRange.EndRowIndex)
-	}
-
-	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, metadata.Name)
-	fmt.Println("REQUUUUU: ", req.ranges)
-	req.updateRange(metadata.Name, r1, c1, rn, cn)
-	valueRange := req.Do()
-
-	return valueRange.Values
+	return filtered
 }
 
 func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface{}) bool {

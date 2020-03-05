@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"strconv"
 	"testing"
-
-	"google.golang.org/api/sheets/v4"
 )
 
 type TestStructMeme struct {
@@ -233,7 +232,7 @@ func TestReadTable(t *testing.T) {
 		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
 	}
 
-	tableValue := manager.ReadTableDataFromStruct(db, TestStructMeme{}, -1)
+	tableValue, _ := manager.ReadTableDataFromStruct(db, TestStructMeme{}, -1)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
@@ -290,7 +289,7 @@ func TestReadAndWriteTable(t *testing.T) {
 	tableMeta := manager.ReadTableMetadataFromStruct(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 
-	tableValue := manager.ReadTableDataFromStruct(db, TestStructMeme{}, -1)
+	tableValue, _ := manager.ReadTableDataFromStruct(db, TestStructMeme{}, -1)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
@@ -320,19 +319,24 @@ func TestReadTableWithFilter(t *testing.T) {
 	tableMeta := manager.ReadTableMetadataFromStruct(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 
-	filter := &sheets.FilterCriteria{}
-	filter.Condition = &sheets.BooleanCondition{}
-	filter.Condition.Type = "NUMBER_EQ"
-	filter.Condition.Values = make([]*sheets.ConditionValue, 1)
-	filter.Condition.Values[0] = &sheets.ConditionValue{}
-	filter.Condition.Values[0].UserEnteredValue = "2019727887"
+	filter := func(field interface{}) bool {
+		return field.(string) == "TRUE"
+	}
+	filter2 := func(field interface{}) bool {
+		v, _ := field.(string)
+		v2, _ := strconv.ParseInt(v, 10, 16)
+		return int16(v2) < 0
+	}
 
-	filterMap := make(map[string]*sheets.FilterCriteria)
-	filterMap["0"] = filter
+	filterMap := make(map[int]Predicate)
+	filterMap[5] = filter
+	filterMap[0] = filter2
 
 	tableValue := manager.ReadTableDataWithFilter(db, TestStructMeme{}, filterMap)
 	fmt.Println("Raw::::")
-	fmt.Println(tableValue)
+	for i, v := range tableValue {
+		fmt.Println(i, v)
+	}
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
