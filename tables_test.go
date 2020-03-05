@@ -113,8 +113,8 @@ func TestCreateTable(t *testing.T) {
 		fmt.Println("Database Name:     ", sheet.Properties.Title)
 		fmt.Println("Database Timezone: ", sheet.Properties.TimeZone)
 		fmt.Println("------Creating table------")
-		manager.CreateEmptyTable(sheet, "MAMA")
-		manager.CreateEmptyTable(sheet, "NENE")
+		manager.CreateTable(sheet, strconv.FormatInt(rand.Int63(), 10), nil)
+		manager.CreateTable(sheet, "NENE", nil)
 		tables := manager.GetTableList(sheet)
 		for i := range tables {
 			fmt.Printf("Table[%d] Name: %s\n", i, tables[i].Properties.Title)
@@ -179,10 +179,10 @@ func TestCreateTableFromStructs(t *testing.T) {
 		t.Fatalf("Sheet %s is nil", "testdb")
 	}
 
-	table := manager.CreateTableFromStruct(db, TestStructMeme{})
+	table := manager.CreateTable(db, "", nil, TestStructMeme{})
 	fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
 
-	tableMeta := manager.ReadTableMetadataFromStruct(db, TestStructMeme{})
+	tableMeta := manager.ReadTableMetadata(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 }
 
@@ -210,7 +210,7 @@ func TestResetTable(t *testing.T) {
 
 	initPrimitiveKind()
 
-	table := manager.CreateTableFromStruct(sheet, TestStructMeme{})
+	table := manager.CreateTable(sheet, "", nil, TestStructMeme{})
 	fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
 }
 
@@ -226,7 +226,7 @@ func TestReadTable(t *testing.T) {
 	// Find or make table
 	table := manager.GetTable(db, "TestStructMeme")
 	if table == nil {
-		table = manager.CreateTableFromStruct(db, TestStructMeme{})
+		table = manager.CreateTable(db, "", nil, TestStructMeme{})
 		fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
 	} else {
 		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
@@ -253,7 +253,7 @@ func TestReadAndWriteTable(t *testing.T) {
 	// Find or make table
 	table := manager.GetTable(db, "TestStructMeme")
 	if table == nil {
-		table = manager.CreateTableFromStruct(db, TestStructMeme{})
+		table = manager.CreateTable(db, "", nil, TestStructMeme{})
 		fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
 	} else {
 		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
@@ -286,7 +286,7 @@ func TestReadAndWriteTable(t *testing.T) {
 		fmt.Printf("Table %s[%d] Failed  Write %d Data\n", table.Properties.Title, table.Properties.SheetId, len(values))
 	}
 
-	tableMeta := manager.ReadTableMetadataFromStruct(db, TestStructMeme{})
+	tableMeta := manager.ReadTableMetadata(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 
 	tableValue, _ := manager.ReadTableDataFromStruct(db, TestStructMeme{}, -1)
@@ -310,13 +310,13 @@ func TestReadTableWithFilter(t *testing.T) {
 	// Find or make table
 	table := manager.GetTable(db, "TestStructMeme")
 	if table == nil {
-		table = manager.CreateTableFromStruct(db, TestStructMeme{})
+		table = manager.CreateTable(db, "", nil, TestStructMeme{})
 		fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
 	} else {
 		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
 	}
 
-	tableMeta := manager.ReadTableMetadataFromStruct(db, TestStructMeme{})
+	tableMeta := manager.ReadTableMetadata(db, TestStructMeme{})
 	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
 
 	filter := func(field interface{}) bool {

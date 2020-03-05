@@ -183,6 +183,8 @@ func (m *SheetManager) SynchronizeFromGoogle(db *sheets.Spreadsheet) *sheets.Spr
 	return db
 }
 
+// Internal Methods
+
 type httpRequest interface {
 	Header() http.Header
 }

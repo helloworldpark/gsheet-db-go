@@ -12,19 +12,26 @@ import (
  * Table api
  */
 
-// CreateEmptyTable Creates a new sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database).
+// CreateTable Creates a new sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database).
 // Case handling:
 // database == nil: return nil
-// database != nil && has sheet with tableName: log as existing, and return the existing sheet with false
-// database != nil && does not have sheet with tableName: log as creating, and return the created sheet with true
-func (m *SheetManager) CreateEmptyTable(database *sheets.Spreadsheet, tableName string) (*sheets.Sheet, bool) {
+// database != nil: log as creating, and return the created sheet with true
+func (m *SheetManager) CreateTable(database *sheets.Spreadsheet, tableName string, constraints []interface{}, structInstance ...interface{}) *sheets.Sheet {
+	// 1. Create new
 	if database == nil {
-		return nil, false
+		return nil
+	}
+	switch len(structInstance) {
+	case 0:
+		break
+	case 1:
+		tableName = reflect.TypeOf(structInstance).Name()
+	default:
+		panic("StructInstance must be 1")
 	}
 	for _, sheet := range database.Sheets {
 		if sheet.Properties.Title == tableName {
-			// todo: log
-			return sheet, false
+			panic(fmt.Sprintf("Has table with name %s", tableName))
 		}
 	}
 	request := make([]*sheets.Request, 1)
@@ -34,9 +41,39 @@ func (m *SheetManager) CreateEmptyTable(database *sheets.Spreadsheet, tableName 
 	request[0].AddSheet.Properties.Title = tableName
 	newSheet, _, statusCode := m.batchUpdate(database, request)
 	if statusCode/100 != 2 {
-		return nil, false
+		return nil
 	}
-	return newSheet.Sheets[len(newSheet.Sheets)-1], true
+	var db *sheets.Sheet
+	for _, sheet := range newSheet.Sheets {
+		if sheet.Properties.Title == tableName {
+			db = sheet
+			break
+		}
+	}
+	if db == nil {
+		return nil
+	}
+
+	// TODO
+	// if len(constraints) > 0
+	// if len(constraints) > 0 {
+
+	// }
+
+	// Apply constraints and other requests
+	// If no struct, return empty
+
+	requests := m.createColumnsFromStruct(db, structInstance[0], constraints...)
+	updated, _, _ := m.batchUpdate(database, requests)
+	if updated == nil {
+		return nil
+	}
+	for _, updatedSheet := range updated.Sheets {
+		if updatedSheet.Properties.SheetId == db.Properties.SheetId {
+			return updatedSheet
+		}
+	}
+	return nil
 }
 
 // GetTable Gets an existing sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
@@ -82,80 +119,6 @@ func (m *SheetManager) DeleteTable(database *sheets.Spreadsheet, tableName strin
 
 func (m *SheetManager) batchUpdate(database *sheets.Spreadsheet, requests []*sheets.Request) (*sheets.Spreadsheet, []*sheets.Response, int) {
 	return newSpreadsheetBatchUpdateRequest(m, database.SpreadsheetId, requests...).Do()
-}
-
-var primitiveStringToKind = make(map[string]reflect.Kind)
-var primitiveKindToString = make(map[reflect.Kind]string)
-
-func initPrimitiveKind() {
-	if len(primitiveStringToKind) > 0 {
-		return
-	}
-	for k := reflect.Bool; k <= reflect.Uint64; k++ {
-		primitiveStringToKind[k.String()] = k
-		primitiveKindToString[k] = k.String()
-	}
-	for k := reflect.Float32; k <= reflect.Float64; k++ {
-		primitiveStringToKind[k.String()] = k
-		primitiveKindToString[k] = k.String()
-	}
-	primitiveStringToKind[reflect.String.String()] = reflect.String
-	primitiveKindToString[reflect.String] = reflect.String.String()
-}
-
-func isPrimitive(i interface{}) bool {
-	_, ok := primitiveKindToString[reflect.TypeOf(i).Kind()]
-	return ok
-}
-
-type structField struct {
-	cname  string
-	ctype  string
-	ckind  reflect.Kind
-	cvalue interface{}
-}
-
-func (f structField) isBool() bool {
-	return f.ckind == reflect.Bool
-}
-
-func (f structField) isString() bool {
-	return f.ckind == reflect.String
-}
-
-func (f structField) isNumeric() bool {
-	return reflect.Int8 <= f.ckind && f.ckind <= reflect.Float64
-}
-
-func analyseStruct(structInstance interface{}) []structField {
-	initPrimitiveKind()
-
-	reflected := reflect.TypeOf(structInstance)
-	if reflected.Kind() != reflect.Struct {
-		return nil
-	}
-	reflectedValue := reflect.ValueOf(structInstance)
-
-	n := reflected.NumField()
-	fields := make([]structField, n)
-
-	for i := 0; i < n; i++ {
-		value := reflectedValue.Field(i)
-		valueType := reflectedValue.Type().Field(i)
-		valueKind := valueType.Type.Kind()
-
-		typestring, ok := primitiveKindToString[valueKind]
-		if !ok {
-			fmt.Println("Not a struct: ", value)
-			return nil
-		}
-
-		fields[i].ctype = typestring
-		fields[i].cname = valueType.Name
-		fields[i].ckind = valueKind
-		fields[i].cvalue = value.Interface()
-	}
-	return fields
 }
 
 func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstance interface{}, constraints ...interface{}) []*sheets.Request {
@@ -216,32 +179,11 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	data[2].Values[1].UserEnteredValue.NumberValue = float64(len(fields))
 	if len(constraints) > 0 {
 		data[2].Values[2].UserEnteredValue = &sheets.ExtendedValue{}
-		// data[2].Values[2].UserEnteredValue.StringValue =
-		// todo
+		// todo: write constraints
 	}
 
 	requests[0].UpdateCells.Rows = data
 	return requests
-}
-
-func (m *SheetManager) CreateTableFromStruct(database *sheets.Spreadsheet, structInstance interface{}, constraints ...interface{}) *sheets.Sheet {
-	tableName := reflect.TypeOf(structInstance).Name()
-	newSheet, isNew := m.CreateEmptyTable(database, tableName)
-	if !isNew {
-		return newSheet
-	}
-
-	requests := m.createColumnsFromStruct(newSheet, structInstance, constraints...)
-	updated, _, _ := m.batchUpdate(database, requests)
-	if updated == nil {
-		return nil
-	}
-	for _, sheet := range updated.Sheets {
-		if sheet.Properties.SheetId == newSheet.Properties.SheetId {
-			return sheet
-		}
-	}
-	return nil
 }
 
 type TableMetadata struct {
@@ -252,7 +194,7 @@ type TableMetadata struct {
 	Constraints string
 }
 
-func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s interface{}) *TableMetadata {
+func (m *SheetManager) ReadTableMetadata(db *sheets.Spreadsheet, s interface{}) *TableMetadata {
 	tableName := reflect.TypeOf(s).Name()
 	tableCols := reflect.TypeOf(s).NumField()
 
@@ -268,9 +210,6 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, tableName)
 	req.updateRange(tableName, 0, 0, 2, int64(tableCols))
 	valueRange := req.Do()
-
-	fmt.Println("READ META")
-	fmt.Println(valueRange.Values)
 
 	colnames := make([]string, len(table.Data[0].RowData[0].Values))
 	for i := range colnames {
@@ -304,7 +243,7 @@ func (m *SheetManager) ReadTableMetadataFromStruct(db *sheets.Spreadsheet, s int
 }
 
 func (m *SheetManager) ReadTableDataFromStruct(db *sheets.Spreadsheet, s interface{}, rows int64) ([][]interface{}, *TableMetadata) {
-	metadata := m.ReadTableMetadataFromStruct(db, s)
+	metadata := m.ReadTableMetadata(db, s)
 	if metadata == nil {
 		fmt.Println("ReadTableDataFromStruct: Metadata is nil")
 		return nil, nil
@@ -363,7 +302,7 @@ func (m *SheetManager) WriteTableData(db *sheets.Spreadsheet, values []interface
 	if len(values) == 0 {
 		return false
 	}
-	metadata := m.ReadTableMetadataFromStruct(db, values[0])
+	metadata := m.ReadTableMetadata(db, values[0])
 	if metadata == nil {
 		return false
 	}
