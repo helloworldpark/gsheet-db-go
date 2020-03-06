@@ -33,19 +33,16 @@ func (db *Database) CreateTable(scheme interface{}, constraints ...interface{}) 
 	request[0].AddSheet = &sheets.AddSheetRequest{}
 	request[0].AddSheet.Properties = &sheets.SheetProperties{}
 	request[0].AddSheet.Properties.Title = tableName
-	newSheet, _, statusCode := db.batchUpdate(request)
+	newDatabase, _, statusCode := db.batchUpdate(request)
 	if statusCode/100 != 2 {
 		return nil
 	}
-	var newTable *Table
-	for _, sheet := range newSheet.ListTables() {
-		if sheet.sheet.Properties.Title == tableName {
-			newTable = sheet
+	var newSheet *sheets.Sheet
+	for _, sheet := range newDatabase.Sheets() {
+		if sheet.Properties.Title == tableName {
+			newSheet = sheet
 			break
 		}
-	}
-	if db == nil {
-		return nil
 	}
 
 	// TODO
@@ -55,15 +52,14 @@ func (db *Database) CreateTable(scheme interface{}, constraints ...interface{}) 
 	// }
 
 	// Apply constraints and other requests
-
-	requests := db.manager.createColumnsFromStruct(newTable.sheet, scheme, constraints...)
+	requests := db.manager.createColumnsFromStruct(newSheet, scheme, constraints...)
 	updated, _, statusCode := db.batchUpdate(requests)
 	if updated == nil {
 		return nil
 	}
 	for _, updatedSheet := range updated.Sheets() {
-		if updatedSheet.Properties.SheetId == newTable.SheetID() {
-			newTable.sheet = updatedSheet
+		if updatedSheet.Properties.SheetId == newSheet.Properties.SheetId {
+			newTable := db.NewTableFromSheet(updatedSheet)
 			return newTable
 		}
 	}
@@ -73,7 +69,7 @@ func (db *Database) CreateTable(scheme interface{}, constraints ...interface{}) 
 // FindTable Gets an existing sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
 // If exists, returns the existed one
 // If not existing, returns nil
-func (db *Database) FindTable(str []interface{}) *Table {
+func (db *Database) FindTable(str interface{}) *Table {
 	tableName := reflect.TypeOf(str).Name()
 	tables := db.ListTables()
 	for _, table := range tables {
@@ -88,13 +84,17 @@ func (db *Database) FindTable(str []interface{}) *Table {
 // If exists, returns the existings
 // If not existing, returns nil
 func (db *Database) ListTables() []*Table {
+	db.Manager().SynchronizeFromGoogle(db)
 	sheets := db.Sheets()
-	tables := make([]*Table, len(sheets))
-	for i, t := range tables {
-		t.manager = db.manager
-		t.database = db
-		t.sheet = sheets[i]
-		t.metadata = t.UpdateMetadata()
+	tables := make([]*Table, 0)
+	for i := range sheets {
+		if !db.IsValidTable(sheets[i]) {
+			continue
+		}
+		newTable := db.NewTableFromSheet(sheets[i])
+		if newTable != nil {
+			tables = append(tables, newTable)
+		}
 	}
 	return tables
 }
@@ -157,20 +157,20 @@ func (table *Table) Drop() bool {
 
 // Metadata Metadata of the table
 func (table *Table) Metadata() *TableMetadata {
-	return table.Metadata()
+	return table.metadata
 }
 
 // UpdateMetadata Reads table's metadata from the server and sync
 func (table *Table) UpdateMetadata() *TableMetadata {
 	// sync
 	table.manager.SynchronizeFromGoogle(table.database)
-	tableName := table.Metadata().Name
+	tableName := table.Name()
 	tableCols := int64(len(table.Metadata().Columns))
 
 	// 0행~2행, 모든 열을 읽는다
 	// 0행
 	req := newSpreadsheetValuesRequest(table.manager, table.Spreadsheet().SpreadsheetId, tableName)
-	req.updateRange(tableName, 0, 0, 2, tableCols)
+	req.updateRange(tableName, 0, 0, 3, tableCols)
 	valueRange := req.Do()
 
 	colnames := make([]string, len(table.sheet.Data[0].RowData[0].Values))
@@ -345,7 +345,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 		data[2].Values[2] = &sheets.CellData{}
 	}
 	data[2].Values[0].UserEnteredValue = &sheets.ExtendedValue{}
-	data[2].Values[0].UserEnteredValue.NumberValue = 0.0
+	data[2].Values[0].UserEnteredValue.StringValue = "0"
 	data[2].Values[1].UserEnteredValue = &sheets.ExtendedValue{}
 	data[2].Values[1].UserEnteredValue.NumberValue = float64(len(fields))
 	if len(constraints) > 0 {

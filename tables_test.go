@@ -17,42 +17,41 @@ type TestStructMeme struct {
 	Name6 bool
 }
 
+func describeDatabase(db *Database) {
+	fmt.Println("Sheet ID: ", db.Spreadsheet().SpreadsheetId)
+	fmt.Println("Sheet Name: ", db.Spreadsheet().Properties.Title)
+	fmt.Println("Sheet Timezone: ", db.Spreadsheet().Properties.TimeZone)
+}
+
 // create, get, delete
 func TestCreateGetDeleteSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.createSpreadsheet("Test First!2")
-	fmt.Printf("------Created sheet %p------\n", sheet)
-	fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
-	fmt.Println("Sheet Name: ", sheet.Properties.Title)
-	fmt.Println("Sheet Timezone: ", sheet.Properties.TimeZone)
-	sheetId := sheet.SpreadsheetId
-	manager.deleteSpreadsheet(sheet.SpreadsheetId)
-	fmt.Println("------Deleted sheet ", sheetId, "------")
-	sheet = manager.getSpreadsheet(sheetId)
-	fmt.Println("------Get sheet ", sheetId, "------")
-	fmt.Println("------    Result ", sheet)
+	db := manager.CreateDatabase("Test First!2")
+	fmt.Printf("------Created database %p------\n", db)
+	describeDatabase(db)
+	sheetID := db.Spreadsheet().SpreadsheetId
+	manager.deleteSpreadsheet(sheetID)
+	fmt.Println("------Deleted database ", sheetID, "------")
 }
 
 // get
-func TestGetSpreadsheet(t *testing.T) {
+func TestGetSpreadsheetByID(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
 	sheetID := "1QMUZpqgBCHWEFQ7YEWBwmWwkrtU8yNOTJD0srqt4aFc"
 	sheet := manager.getSpreadsheet(sheetID)
-	fmt.Println("------Get sheet ", sheetID, "------")
+	fmt.Println("------Get database ", sheetID, "------")
 	fmt.Println("------    Result ", sheet.SpreadsheetId)
 }
 
 // create
 func TestCreateSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.createSpreadsheet("Testing!")
-	fmt.Println("------Created sheet------")
-	fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
-	fmt.Println("Sheet Name: ", sheet.Properties.Title)
-	fmt.Println("Sheet Timezone: ", sheet.Properties.TimeZone)
+	database := manager.CreateDatabase("Testing!")
+	fmt.Println("------Created database------")
+	describeDatabase(database)
 }
 
-// list
+// list db
 func TestListSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
 	sheets := manager.listSpreadsheets()
@@ -65,22 +64,8 @@ func TestListSpreadsheet(t *testing.T) {
 	}
 }
 
-// Delete
-func TestDeleteSpreadsheet(t *testing.T) {
-	manager := NewSheetManager(jsonPath)
-	sheet := manager.findSpreadsheet(dbFileStart + "testdb")
-	fmt.Println("------Found sheet------")
-	fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
-	fmt.Println("Sheet Name: ", sheet.Properties.Title)
-	fmt.Println("Sheet Timezone: ", sheet.Properties.TimeZone)
-	sheetId := sheet.SpreadsheetId
-	if manager.deleteSpreadsheet(sheet.SpreadsheetId) {
-		fmt.Println("------Deleted sheet ", sheetId, "------")
-	}
-}
-
-// Find
-func TestSpreadsheet005(t *testing.T) {
+// Find DB
+func TestFindSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
 	sheet := manager.findSpreadsheet("Test First!")
 	if sheet != nil {
@@ -91,132 +76,116 @@ func TestSpreadsheet005(t *testing.T) {
 	}
 }
 
-// Create DB
-func TestSpreadsheet006(t *testing.T) {
+// Delete DB
+func TestDeleteSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.Database("testdb")
-	if sheet != nil {
-		fmt.Println("------Listing sheet------")
-		fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
-		fmt.Println("Sheet Name: ", sheet.Properties.Title)
-		fmt.Println("Sheet Timezone: ", sheet.Properties.TimeZone)
+	sheet := manager.findSpreadsheet(dbFileStart + "testdb")
+	fmt.Println("------Found sheet------")
+	fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
+	fmt.Println("Sheet Name: ", sheet.Properties.Title)
+	fmt.Println("Sheet Timezone: ", sheet.Properties.TimeZone)
+	sheetID := sheet.SpreadsheetId
+	if manager.deleteSpreadsheet(sheet.SpreadsheetId) {
+		fmt.Println("------Deleted sheet ", sheetID, "------")
 	}
+}
+
+// Create DB
+func TestCreateDatabase(t *testing.T) {
+	manager := NewSheetManager(jsonPath)
+	database := manager.CreateDatabase("testdb")
+	if database == nil {
+		t.Fatal("database nil")
+	}
+	fmt.Println("------Listing sheet------")
+	describeDatabase(database)
 }
 
 // Create table
 func TestCreateTable(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.FindDatabase("testdb")
-	if sheet != nil {
-		fmt.Println("------This database------")
-		fmt.Println("Database ID:       ", sheet.SpreadsheetId)
-		fmt.Println("Database Name:     ", sheet.Properties.Title)
-		fmt.Println("Database Timezone: ", sheet.Properties.TimeZone)
-		fmt.Println("------Creating table------")
-		manager.CreateTable(sheet, strconv.FormatInt(rand.Int63(), 10), nil)
-		manager.CreateTable(sheet, "NENE", nil)
-		tables := manager.GetTableList(sheet)
-		for i := range tables {
-			fmt.Printf("Table[%d] Name: %s\n", i, tables[i].Properties.Title)
-		}
+	db := manager.FindDatabase("testdb")
+	if db == nil {
+		t.Fatalf("database %s is nil", "testdb")
 	}
+
+	table := db.CreateTable(TestStructMeme{})
+	fmt.Printf("DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
+
+	tableMeta := table.Metadata()
+	fmt.Printf("Metadata: \n%+v\n", *tableMeta)
 }
 
-// View table
-func TestViewTable(t *testing.T) {
+// List tables
+func TestListTables(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.FindDatabase("testdb")
-	if sheet != nil {
-		fmt.Println("------This database------")
-		fmt.Println("Database ID:       ", sheet.SpreadsheetId)
-		fmt.Println("Database Name:     ", sheet.Properties.Title)
-		fmt.Println("Database Timezone: ", sheet.Properties.TimeZone)
-		fmt.Println("------Viewing table------")
-		tables := manager.GetTableList(sheet)
-		for i := range tables {
-			fmt.Printf("Table[%d] Name: %s\n", i, tables[i].Properties.Title)
-		}
-		table := manager.GetTable(sheet, "NENE")
-		if table != nil {
-			fmt.Printf("Table = %s\n", table.Properties.Title)
-		}
-
+	database := manager.FindDatabase("testdb")
+	database.Manager().SynchronizeFromGoogle(database)
+	tables := database.ListTables()
+	for i := range tables {
+		fmt.Printf("DB: %s Table[%d] Name: %s\n", database.spreadsheet.SpreadsheetId, i, tables[i].Name())
 	}
 }
 
 // Delete table
 func TestDeleteTable(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.FindDatabase("testdb")
-	if sheet != nil {
-		fmt.Println("------This database------")
-		fmt.Println("Database ID:       ", sheet.SpreadsheetId)
-		fmt.Println("Database Name:     ", sheet.Properties.Title)
-		fmt.Println("Database Timezone: ", sheet.Properties.TimeZone)
-		fmt.Println("------Viewing table------")
-
-		tableName := "TestStructMeme"
-		deleted := manager.DeleteTable(sheet, tableName)
-		if deleted {
-			fmt.Println("Deleted Table = ", tableName)
-		} else {
-			fmt.Println("Failed delete Table = ", tableName)
-		}
-
-		tables := manager.GetTableList(sheet)
-		for i := range tables {
-			fmt.Printf("Table[%d] Name: %s\n", i, tables[i].Properties.Title)
-		}
+	database := manager.FindDatabase("testdb")
+	if database == nil {
+		t.Fatal("database is nil")
 	}
-}
+	fmt.Println("------This database------")
+	describeDatabase(database)
+	fmt.Println("------Viewing table------")
 
-func TestCreateTableFromStructs(t *testing.T) {
-	initPrimitiveKind()
-
-	manager := NewSheetManager(jsonPath)
-	db := manager.FindDatabase("testdb")
-	if db == nil {
-		t.Fatalf("Sheet %s is nil", "testdb")
-	}
-
-	table := manager.CreateTable(db, "", nil, TestStructMeme{})
-	fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
-
-	tableMeta := manager.GetTableMetadata(db, TestStructMeme{})
-	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
-}
-
-func TestResetTable(t *testing.T) {
-	manager := NewSheetManager(jsonPath)
-	sheet := manager.FindDatabase("testdb")
-	if sheet == nil {
+	table := database.FindTable(TestStructMeme{})
+	if table == nil {
+		t.Fatal("Table deleted")
 		return
 	}
 
-	tableName := "TestStructMeme"
-
-	fmt.Println("------This database------")
-	fmt.Println("Database ID:       ", sheet.SpreadsheetId)
-	fmt.Println("Database Name:     ", sheet.Properties.Title)
-	fmt.Println("Database Timezone: ", sheet.Properties.TimeZone)
-
-	deleted := manager.DeleteTable(sheet, tableName)
-	fmt.Println("------Viewing table------")
+	tableName := table.Name()
+	deleted := table.Drop()
 	if deleted {
 		fmt.Println("Deleted Table = ", tableName)
 	} else {
 		fmt.Println("Failed delete Table = ", tableName)
 	}
 
-	initPrimitiveKind()
+	tables := database.ListTables()
+	fmt.Println("------Viewing table------")
+	for i := range tables {
+		fmt.Printf("Table[%d] Name: %s\n", i, tables[i].Name())
+	}
+}
 
-	table := manager.CreateTable(sheet, "", nil, TestStructMeme{})
-	fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
+func TestResetTable(t *testing.T) {
+	manager := NewSheetManager(jsonPath)
+	database := manager.FindDatabase("testdb")
+	if database == nil {
+		return
+	}
+
+	fmt.Println("------This database------")
+	describeDatabase(database)
+
+	tableName := "TestStructMeme"
+	table := database.FindTable(TestStructMeme{})
+	if table == nil {
+		t.Fatal("Table is nil")
+	}
+	deleted := table.Drop()
+	if deleted {
+		fmt.Println("Deleted Table = ", tableName)
+	} else {
+		fmt.Println("Failed delete Table = ", tableName)
+	}
+
+	table = database.CreateTable(TestStructMeme{})
+	fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
 }
 
 func TestReadTable(t *testing.T) {
-	initPrimitiveKind()
-
 	manager := NewSheetManager(jsonPath)
 	db := manager.FindDatabase("testdb")
 	if db == nil {
@@ -224,15 +193,15 @@ func TestReadTable(t *testing.T) {
 	}
 
 	// Find or make table
-	table := manager.GetTable(db, "TestStructMeme")
+	table := db.FindTable(TestStructMeme{})
 	if table == nil {
-		table = manager.CreateTable(db, "", nil, TestStructMeme{})
-		fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
+		table = db.CreateTable(TestStructMeme{})
+		fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
 	} else {
-		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
+		fmt.Printf("Table %s[%d] found\n", table.Name(), table.SheetID())
 	}
 
-	tableValue, _ := manager.SelectRow(db, TestStructMeme{}, -1)
+	tableValue, _ := table.Select(-1)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
@@ -242,8 +211,6 @@ func TestReadTable(t *testing.T) {
 }
 
 func TestReadAndWriteTable(t *testing.T) {
-	initPrimitiveKind()
-
 	manager := NewSheetManager(jsonPath)
 	db := manager.FindDatabase("testdb")
 	if db == nil {
@@ -251,12 +218,12 @@ func TestReadAndWriteTable(t *testing.T) {
 	}
 
 	// Find or make table
-	table := manager.GetTable(db, "TestStructMeme")
+	table := db.FindTable(TestStructMeme{})
 	if table == nil {
-		table = manager.CreateTable(db, "", nil, TestStructMeme{})
-		fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
+		table = db.CreateTable(TestStructMeme{})
+		fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
 	} else {
-		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
+		fmt.Printf("Table %s[%d] found\n", table.Name(), table.SheetID())
 	}
 
 	// Write to table
@@ -279,17 +246,17 @@ func TestReadAndWriteTable(t *testing.T) {
 
 		values = append(values, meme)
 	}
-	didSuccess := manager.Upsert(db, values)
+	didSuccess := table.Upsert(values)
 	if didSuccess {
-		fmt.Printf("Table %s[%d] Success Write %d Data\n", table.Properties.Title, table.Properties.SheetId, len(values))
+		fmt.Printf("Table %s[%d] Success Write %d Data\n", table.Name(), table.SheetID(), len(values))
 	} else {
-		fmt.Printf("Table %s[%d] Failed  Write %d Data\n", table.Properties.Title, table.Properties.SheetId, len(values))
+		fmt.Printf("Table %s[%d] Failed  Write %d Data\n", table.Name(), table.SheetID(), len(values))
 	}
 
-	tableMeta := manager.GetTableMetadata(db, TestStructMeme{})
-	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
+	tableMeta := table.Metadata()
+	fmt.Printf("Metadata: %+v\n", *tableMeta)
 
-	tableValue, _ := manager.SelectRow(db, TestStructMeme{}, -1)
+	tableValue, _ := table.Select(-1)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
@@ -308,16 +275,16 @@ func TestReadTableWithFilter(t *testing.T) {
 	}
 
 	// Find or make table
-	table := manager.GetTable(db, "TestStructMeme")
+	table := db.FindTable(TestStructMeme{})
 	if table == nil {
-		table = manager.CreateTable(db, "", nil, TestStructMeme{})
-		fmt.Printf("Table %s[%d] created\n", table.Properties.Title, table.Properties.SheetId)
+		table = db.CreateTable(TestStructMeme{})
+		fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
 	} else {
-		fmt.Printf("Table %s[%d] found\n", table.Properties.Title, table.Properties.SheetId)
+		fmt.Printf("Table %s[%d] found\n", table.Name(), table.SheetID())
 	}
 
-	tableMeta := manager.GetTableMetadata(db, TestStructMeme{})
-	fmt.Printf("Table %s[%d] \nMetadata: %+v\n", table.Properties.Title, table.Properties.SheetId, *tableMeta)
+	tableMeta := table.Metadata()
+	fmt.Printf("Metadata: %+v\n", *tableMeta)
 
 	filter := func(field interface{}) bool {
 		return field.(string) == "TRUE"
@@ -332,7 +299,7 @@ func TestReadTableWithFilter(t *testing.T) {
 	filterMap[5] = filter
 	filterMap[0] = filter2
 
-	tableValue := manager.SelectRowWithFilter(db, TestStructMeme{}, filterMap)
+	tableValue, _ := table.SelectAndFilter(filterMap)
 	fmt.Println("Raw::::")
 	for i, v := range tableValue {
 		fmt.Println(i, v)

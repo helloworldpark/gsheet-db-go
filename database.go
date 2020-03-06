@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"strconv"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/sheets/v4"
@@ -14,6 +15,10 @@ import (
 const dbFileStart = "database_file_"
 const tableDataStartRowIndex = 3
 const tableDataStartColumnIndex = 0
+
+func init() {
+	initPrimitiveKind()
+}
 
 /*
  * SheetManager api
@@ -52,6 +57,55 @@ func (m *SheetManager) RefreshToken() {
 	return
 }
 
+// CreateDatabase creates a new database with the given database_file_`title`.
+// Be careful, 'database_file_' tag is on the start of the title.
+func (m *SheetManager) CreateDatabase(title string) *Database {
+	db := m.createSpreadsheet(dbFileStart + title)
+	return &Database{
+		manager:     m,
+		spreadsheet: db,
+	}
+}
+
+// FindDatabase gets a new database with the given database_file_`title`, if exists.
+// If not existing, it will return nil.
+// Be careful, 'database_file_' tag is on the start of the title finding for.
+func (m *SheetManager) FindDatabase(title string) *Database {
+	if db := m.findSpreadsheet(dbFileStart + title); db != nil {
+		return &Database{
+			manager:     m,
+			spreadsheet: db,
+		}
+	}
+	return nil
+}
+
+// DropDatabase deletes a database with the given database_file_`title`, if exists.
+// If not existing, or failed to delete, it will log and return false.
+// Be careful, 'database_file_' tag is implicitly on the start of the title finding for.
+func (m *SheetManager) DropDatabase(title string) bool {
+	db := m.FindDatabase(title)
+	if db == nil {
+		return false
+	}
+	return m.deleteSpreadsheet(db.spreadsheet.SpreadsheetId)
+}
+
+// SynchronizeFromGoogle Synchronize data from google
+func (m *SheetManager) SynchronizeFromGoogle(db *Database) *Database {
+	if db == nil {
+		return nil
+	}
+
+	rawDB := m.getSpreadsheet(db.spreadsheet.SpreadsheetId)
+	if rawDB == nil {
+		fmt.Printf("[SheetManager] SyncDatabaseToGoogle: DB is nil")
+		return nil
+	}
+	db.spreadsheet = rawDB
+	return db
+}
+
 /*
  * Database api
  */
@@ -77,53 +131,49 @@ func (m *Database) Sheets() []*sheets.Sheet {
 	return m.spreadsheet.Sheets
 }
 
-// CreateDatabase creates a new database with the given database_file_`title`.
-// Be careful, 'database_file_' tag is on the start of the title.
-func (m *SheetManager) CreateDatabase(title string) *Database {
-	db := m.createSpreadsheet(dbFileStart + title)
-	return &Database{
-		manager:     m,
-		spreadsheet: db,
-	}
-}
-
-// FindDatabase gets a new database with the given database_file_`title`, if exists.
-// If not existing, it will return nil.
-// Be careful, 'database_file_' tag is on the start of the title finding for.
-func (m *SheetManager) FindDatabase(title string) *Database {
-	if db := m.findSpreadsheet(dbFileStart + title); db != nil {
-		return &Database{
-			manager:     m,
-			spreadsheet: db,
-		}
-	}
-	return nil
-}
-
-// DeleteDatabase deletes a database with the given database_file_`title`, if exists.
-// If not existing, or failed to delete, it will log and return false.
-// Be careful, 'database_file_' tag is implicitly on the start of the title finding for.
-func (m *SheetManager) DeleteDatabase(title string) bool {
-	db := m.FindDatabase(title)
-	if db == nil {
+func (m *Database) IsValidTable(sheet *sheets.Sheet) bool {
+	if sheet.Properties.Title == "Sheet1" {
 		return false
 	}
-	return m.deleteSpreadsheet(db.spreadsheet.SpreadsheetId)
+	return true
 }
 
-// SynchronizeFromGoogle Synchronize data from google
-func (m *SheetManager) SynchronizeFromGoogle(db *Database) *Database {
-	if db == nil {
+// NewTableFromSheet creates new *Table instance
+func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
+	req := newSpreadsheetValuesRequest(m.manager, m.Spreadsheet().SpreadsheetId, sheet.Properties.Title)
+	req.updateRange(sheet.Properties.Title, 0, 0, 3, 25) // todo: hardcoding
+	valueRange := req.Do()
+
+	if valueRange == nil {
 		return nil
 	}
 
-	rawDB := m.getSpreadsheet(db.spreadsheet.SpreadsheetId)
-	if rawDB == nil {
-		fmt.Printf("[SheetManager] SyncDatabaseToGoogle: DB is nil")
-		return nil
+	// todo: error check
+	rows, _ := strconv.ParseInt(valueRange.Values[2][0].(string), 10, 64)
+	cols, _ := strconv.ParseInt(valueRange.Values[2][1].(string), 10, 64)
+	constraints := ""
+	if len(valueRange.Values[2]) > 2 {
+		constraints = valueRange.Values[2][2].(string)
 	}
-	db.spreadsheet = rawDB
-	return db
+
+	colnames := make([]string, cols)
+	dtypes := make([]reflect.Kind, cols)
+	for i := range colnames {
+		colnames[i] = valueRange.Values[0][i].(string)
+		dtypes[i] = primitiveStringToKind[valueRange.Values[1][i].(string)]
+	}
+
+	table := &Table{}
+	table.sheet = sheet
+	table.database = m
+	table.manager = m.manager
+	table.metadata = &TableMetadata{}
+	table.metadata.Columns = colnames
+	table.metadata.Constraints = constraints
+	table.metadata.Name = sheet.Properties.Title
+	table.metadata.Rows = rows
+	table.metadata.Types = dtypes
+	return table
 }
 
 /*
@@ -362,7 +412,7 @@ func newSpreadsheetValuesRequest(manager *SheetManager, spreadsheetID, tableName
 	}
 }
 
-// updateRange does include end
+// updateRange does not include end
 func (r *httpValueRangeRequest) updateRange(tablename string, startRow, startCol, endRow, endCol int64) bool {
 	ranges := newCellRange(tablename, startRow, startCol, endRow, endCol)
 	r.manager.RefreshToken()
@@ -396,6 +446,7 @@ func newSpreadsheetValuesUpdateRequest(manager *SheetManager, spreadsheetID, tab
 	}
 }
 
+// updateRange does not include end
 func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []interface{}) bool {
 	if len(values) == 0 {
 		return false
