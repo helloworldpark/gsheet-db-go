@@ -180,6 +180,7 @@ func TestResetTable(t *testing.T) {
 	} else {
 		fmt.Println("Failed delete Table = ", tableName)
 	}
+	manager.SynchronizeFromGoogle(database)
 
 	table = database.CreateTable(TestStructMeme{})
 	fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
@@ -246,7 +247,7 @@ func TestReadAndWriteTable(t *testing.T) {
 
 		values = append(values, meme)
 	}
-	didSuccess := table.Upsert(values)
+	didSuccess := table.UpsertIf(values)
 	if didSuccess {
 		fmt.Printf("Table %s[%d] Success Write %d Data\n", table.Name(), table.SheetID(), len(values))
 	} else {
@@ -266,8 +267,6 @@ func TestReadAndWriteTable(t *testing.T) {
 }
 
 func TestReadTableWithFilter(t *testing.T) {
-	initPrimitiveKind()
-
 	manager := NewSheetManager(jsonPath)
 	db := manager.FindDatabase("testdb")
 	if db == nil {
@@ -282,9 +281,6 @@ func TestReadTableWithFilter(t *testing.T) {
 	} else {
 		fmt.Printf("Table %s[%d] found\n", table.Name(), table.SheetID())
 	}
-
-	tableMeta := table.Metadata()
-	fmt.Printf("Metadata: %+v\n", *tableMeta)
 
 	filter := func(field interface{}) bool {
 		return field.(string) == "TRUE"
@@ -310,4 +306,55 @@ func TestReadTableWithFilter(t *testing.T) {
 		}
 		fmt.Printf("\n")
 	}
+}
+
+func TestDeleteRow(t *testing.T) {
+	manager := NewSheetManager(jsonPath)
+	db := manager.FindDatabase("testdb")
+	if db == nil {
+		t.Fatalf("Sheet %s is nil", "testdb")
+	}
+	fmt.Println("------1")
+
+	// Find or make table
+	table := db.FindTable(TestStructMeme{})
+	if table == nil {
+		table = db.CreateTable(TestStructMeme{})
+		fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
+	} else {
+		fmt.Printf("Table %s[%d] found\n", table.Name(), table.SheetID())
+	}
+	fmt.Println("------2")
+
+	filter0 := func(field interface{}) bool {
+		v, _ := field.(string)
+		v2, _ := strconv.ParseInt(v, 10, 16)
+		return int16(v2) < 0
+	}
+	filter5 := func(field interface{}) bool {
+		return field.(string) == "TRUE"
+	}
+
+	predicate := func(row []interface{}) bool {
+		fmt.Println("Row ", row)
+		p1 := filter0(row[0])
+		p2 := filter5(row[5])
+		fmt.Println(row[0], p1, row[5], p2)
+		return p1
+	}
+
+	deletedIndex := table.Delete(predicate)
+	for i := 0; i < len(deletedIndex); i++ {
+		fmt.Println("Deleted: ", deletedIndex[i])
+	}
+	fmt.Println("------3")
+
+	tableValue, _ := table.Select(-1)
+	for i := 0; i < len(tableValue); i++ {
+		for j := 0; j < len(tableValue[i]); j++ {
+			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
+		}
+		fmt.Printf("\n")
+	}
+	fmt.Println("------4")
 }

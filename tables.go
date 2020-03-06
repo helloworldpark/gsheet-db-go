@@ -128,6 +128,9 @@ type TableMetadata struct {
 // Predicate Check if the given interface fits the condition
 type Predicate func(interface{}) bool
 
+// ArrayPredicate Check if the given interface fits the condition
+type ArrayPredicate func([]interface{}) bool
+
 // SheetID alias of sheet id
 func (table *Table) SheetID() int64 {
 	return table.sheet.Properties.SheetId
@@ -201,11 +204,17 @@ func (table *Table) UpdateMetadata() *TableMetadata {
 		Rows:        rows,
 		Constraints: constraints,
 	}
+	table.metadata = metadata
 	return metadata
 }
 
 // Select Selects all the rows from the table
 func (table *Table) Select(rows int64) ([][]interface{}, *TableMetadata) {
+	// sync
+	defer func() {
+		// sync
+		table.UpdateMetadata()
+	}()
 	metadata := table.Metadata()
 	if metadata == nil {
 		fmt.Println("Select: Metadata is nil")
@@ -224,10 +233,14 @@ func (table *Table) Select(rows int64) ([][]interface{}, *TableMetadata) {
 
 	// 3행~, 모든 열을 읽는다
 	req := newSpreadsheetValuesRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
-	req.updateRange(metadata.Name, 3, 0, 3+rows, int64(len(metadata.Columns))-1)
+	req.updateRange(metadata.Name, 3, 0, 3+rows, int64(len(metadata.Columns)))
 	valueRange := req.Do()
+	fmt.Println("VALUE RANGE", valueRange.Range)
+	for i := range valueRange.Values {
+		fmt.Printf("VALUE VALUES[%d] %+v\n", i, valueRange.Values[i])
+	}
 
-	return valueRange.Values, nil
+	return valueRange.Values, metadata
 }
 
 // SelectAndFilter Select rows satisfying filter
@@ -258,38 +271,141 @@ func (table *Table) SelectAndFilter(filters map[int]Predicate) ([][]interface{},
 	return filtered, metadata
 }
 
-// Upsert Upserts given `values`. Returns true if success.
-func (table *Table) Upsert(values []interface{}) bool {
+// UpsertIf Upserts given `values`. Returns true if success.
+func (table *Table) UpsertIf(values []interface{}, condition ...map[int]func(interface{}) bool) bool {
 	if len(values) == 0 {
 		return false
 	}
+
+	defer func() {
+		// sync
+		table.UpdateMetadata()
+	}()
+
+	table.manager.SynchronizeFromGoogle(table.database)
 	metadata := table.Metadata()
 	if metadata == nil {
 		return false
 	}
 
-	// 3행~, 쓸 수 있는만큼 쓴다
-	req := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
-	req.updateRange(metadata, values)
-	if req.Do()/100 != 2 {
+	if len(condition) == 0 {
+		// 3행~, 쓸 수 있는만큼 쓴다
+		req := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
+		req.updateRange(metadata, values)
+		if req.Do()/100 != 2 {
+			return false
+		}
+
+		// 기록한 행 업데이트
+		req.updateRows(metadata, len(values))
+		if req.Do()/100 != 2 {
+			return false
+		}
+	} else {
+
+	}
+
+	return true
+}
+
+// UpsertArrayIf Upserts given `values`. Returns true if success.
+func (table *Table) UpsertArrayIf(values [][]interface{}, condition ...map[int]func(interface{}) bool) bool {
+
+	if len(values) == 0 {
 		return false
 	}
 
-	// 기록한 행 업데이트
-	req.updateRows(metadata, len(values))
-	if req.Do()/100 != 2 {
+	defer func() {
+		// sync
+		table.UpdateMetadata()
+	}()
+	metadata := table.Metadata()
+	if metadata == nil {
 		return false
 	}
+
+	if len(condition) == 0 {
+		// 3행~, 쓸 수 있는만큼 쓴다
+		req := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
+		req.updateRangeWithArray(metadata, values)
+		if req.Do()/100 != 2 {
+			return false
+		}
+
+		// 기록한 행 업데이트
+		req.updateRows(metadata, len(values))
+		if req.Do()/100 != 2 {
+			return false
+		}
+	} else {
+
+	}
+
 	return true
 }
 
 // Delete Deletes and returns deleted rows
-func (table *Table) Delete(filters map[int]Predicate) []int64 {
-	return nil
-}
+// deleteThis: input - array of row values
+// returns: array of rows starting from 0
+func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
+	defer func() {
+		// sync
+		table.UpdateMetadata()
+	}()
+	// call data
+	data, metadata := table.Select(-1)
+	if data == nil {
+		return nil
+	}
+	fmt.Printf("AAAA: %+v\n", metadata)
 
-func (table *Table) updateColumns(source interface{}) bool {
-	return false
+	// delete if predicate==true
+	newData := make([][]interface{}, 0)
+	deletedIndex := make([]int64, 0)
+	for i, values := range data {
+		if deleteThis(values) {
+			// add to deleted index
+			deletedIndex = append(deletedIndex, int64(i))
+			fmt.Println("Deleted ", i)
+		} else {
+			newData = append(newData, values)
+			fmt.Println("Saved ", i)
+		}
+	}
+
+	if len(deletedIndex) == 0 {
+		return nil
+	}
+
+	// update deleted data
+	table.UpsertArrayIf(newData)
+
+	// reorder data: batch clear
+	startRow := int64(3 + len(newData))
+	startCol := int64(0)
+	endRow := int64(3 + len(data))
+	endCol := int64(len(metadata.Columns))
+	ranges := newCellRange(metadata.Name, startRow, startCol, endRow, endCol)
+
+	clearRequest := &sheets.ClearValuesRequest{}
+	table.manager.RefreshToken()
+	req := table.manager.service.Spreadsheets.Values.Clear(table.Spreadsheet().SpreadsheetId, ranges.String(), clearRequest)
+	req.Header().Add("Authorization", "Bearer "+table.manager.token.AccessToken)
+	didClear, err := req.Do()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Cleared: ", didClear.ClearedRange)
+
+	// subtract row counts
+	syncRowCount := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
+	syncRowCount.updateRows(metadata, -len(deletedIndex))
+	if syncRowCount.Do()/100 != 2 {
+		panic("Cannot update row")
+	}
+
+	// return index
+	return deletedIndex
 }
 
 func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstance interface{}, constraints ...interface{}) []*sheets.Request {

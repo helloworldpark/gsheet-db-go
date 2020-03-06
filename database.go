@@ -446,16 +446,34 @@ func newSpreadsheetValuesUpdateRequest(manager *SheetManager, spreadsheetID, tab
 	}
 }
 
+// rangeString does not include end
+func rangeString(metadata *TableMetadata, startRow, appendingRow int64) cellRange {
+	endRow := startRow + appendingRow
+	const startCol = tableDataStartColumnIndex
+	endCol := int64(startCol + len(metadata.Columns))
+
+	fmt.Println("startRow: ", startRow)
+	fmt.Println("endRow: ", endRow)
+	fmt.Println("startCol: ", startCol)
+	fmt.Println("endCol: ", endCol)
+
+	ranges := newCellRange(metadata.Name, startRow, startCol, endRow, endCol)
+	return ranges
+}
+
+func (r *httpUpdateValuesRequest) updateRangeWithArray(metadata *TableMetadata, values [][]interface{}) {
+	r.updatingValues = values
+	startRow := metadata.Rows + tableDataStartColumnIndex
+	r.ranges = rangeString(metadata, startRow, int64(len(values))).String()
+}
+
 // updateRange does not include end
 func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []interface{}) bool {
 	if len(values) == 0 {
 		return false
 	}
-	startRow := metadata.Rows + tableDataStartRowIndex
-	endRow := startRow + int64(len(values))
-	const startCol = tableDataStartColumnIndex
-	endCol := int64(startCol + len(metadata.Columns))
 
+	r.updatingValues = nil
 	for i := range values {
 		r.updatingValues = append(r.updatingValues, make([]interface{}, 0))
 		reflected := reflect.ValueOf(values[i])
@@ -463,9 +481,10 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []
 			r.updatingValues[i] = append(r.updatingValues[i], reflected.FieldByName(metadata.Columns[j]).Interface())
 		}
 	}
-
-	ranges := newCellRange(metadata.Name, startRow, startCol, endRow, endCol)
+	startRow := metadata.Rows + tableDataStartRowIndex
+	ranges := rangeString(metadata, startRow, int64(len(values)))
 	r.ranges = ranges.String()
+	fmt.Println("UpdateRange: ", r.ranges)
 	return true
 }
 
