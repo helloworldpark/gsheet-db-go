@@ -16,20 +16,14 @@ import (
 // Case handling:
 // database == nil: return nil
 // database != nil: log as creating, and return the created sheet with true
-func (m *SheetManager) CreateTable(database *sheets.Spreadsheet, tableName string, constraints []interface{}, structInstance ...interface{}) *sheets.Sheet {
+func (db *Database) CreateTable(scheme interface{}, constraints ...interface{}) *Table {
 	// 1. Create new
-	if database == nil {
+	if db.Spreadsheet() == nil {
+		// todo: log
 		return nil
 	}
-	switch len(structInstance) {
-	case 0:
-		break
-	case 1:
-		tableName = reflect.TypeOf(structInstance).Name()
-	default:
-		panic("StructInstance must be 1")
-	}
-	for _, sheet := range database.Sheets {
+	tableName := reflect.TypeOf(scheme).Name()
+	for _, sheet := range db.spreadsheet.Sheets {
 		if sheet.Properties.Title == tableName {
 			panic(fmt.Sprintf("Has table with name %s", tableName))
 		}
@@ -39,14 +33,14 @@ func (m *SheetManager) CreateTable(database *sheets.Spreadsheet, tableName strin
 	request[0].AddSheet = &sheets.AddSheetRequest{}
 	request[0].AddSheet.Properties = &sheets.SheetProperties{}
 	request[0].AddSheet.Properties.Title = tableName
-	newSheet, _, statusCode := m.batchUpdate(database, request)
+	newSheet, _, statusCode := db.batchUpdate(request)
 	if statusCode/100 != 2 {
 		return nil
 	}
-	var db *sheets.Sheet
-	for _, sheet := range newSheet.Sheets {
-		if sheet.Properties.Title == tableName {
-			db = sheet
+	var newTable *Table
+	for _, sheet := range newSheet.ListTables() {
+		if sheet.sheet.Properties.Title == tableName {
+			newTable = sheet
 			break
 		}
 	}
@@ -61,64 +55,241 @@ func (m *SheetManager) CreateTable(database *sheets.Spreadsheet, tableName strin
 	// }
 
 	// Apply constraints and other requests
-	// If no struct, return empty
 
-	requests := m.createColumnsFromStruct(db, structInstance[0], constraints...)
-	updated, _, _ := m.batchUpdate(database, requests)
+	requests := db.manager.createColumnsFromStruct(newTable.sheet, scheme, constraints...)
+	updated, _, statusCode := db.batchUpdate(requests)
 	if updated == nil {
 		return nil
 	}
-	for _, updatedSheet := range updated.Sheets {
-		if updatedSheet.Properties.SheetId == db.Properties.SheetId {
-			return updatedSheet
+	for _, updatedSheet := range updated.Sheets() {
+		if updatedSheet.Properties.SheetId == newTable.SheetID() {
+			newTable.sheet = updatedSheet
+			return newTable
 		}
 	}
 	return nil
 }
 
-// GetTable Gets an existing sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
+// FindTable Gets an existing sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
 // If exists, returns the existed one
 // If not existing, returns nil
-func (m *SheetManager) GetTable(database *sheets.Spreadsheet, tableName string) *sheets.Sheet {
-	tables := m.GetTableList(database)
+func (db *Database) FindTable(str []interface{}) *Table {
+	tableName := reflect.TypeOf(str).Name()
+	tables := db.ListTables()
 	for _, table := range tables {
-		if table.Properties.Title == tableName {
+		if table.Name() == tableName {
 			return table
 		}
 	}
 	return nil
 }
 
-// GetTableList Gets an existing sheets(a.k.a. table) in the given Spreadsheet(a.k.a. database).
+// ListTables Gets an existing sheets(a.k.a. table) in the given Spreadsheet(a.k.a. database).
 // If exists, returns the existings
 // If not existing, returns nil
-func (m *SheetManager) GetTableList(database *sheets.Spreadsheet) []*sheets.Sheet {
-	if database == nil {
-		return nil
+func (db *Database) ListTables() []*Table {
+	sheets := db.Sheets()
+	tables := make([]*Table, len(sheets))
+	for i, t := range tables {
+		t.manager = db.manager
+		t.database = db
+		t.sheet = sheets[i]
+		t.metadata = t.UpdateMetadata()
 	}
-	return database.Sheets
+	return tables
 }
 
-// DeleteTable Deletes an existing sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
+func (db *Database) batchUpdate(requests []*sheets.Request) (*Database, []*sheets.Response, int) {
+	spreadsheet, responses, statusCode := newSpreadsheetBatchUpdateRequest(db.manager, db.Spreadsheet().SpreadsheetId, requests...).Do()
+	updated := &Database{
+		manager:     db.manager,
+		spreadsheet: spreadsheet,
+	}
+	return updated, responses, statusCode
+}
+
+// Table Wrapper of the table(spreadsheet.sheet)
+type Table struct {
+	manager  *SheetManager
+	database *Database
+	sheet    *sheets.Sheet
+	metadata *TableMetadata
+}
+
+// TableMetadata Metadata of the table
+type TableMetadata struct {
+	Name        string
+	Columns     []string
+	Types       []reflect.Kind
+	Rows        int64
+	Constraints string
+}
+
+// Predicate Check if the given interface fits the condition
+type Predicate func(interface{}) bool
+
+// SheetID alias of sheet id
+func (table *Table) SheetID() int64 {
+	return table.sheet.Properties.SheetId
+}
+
+// Name name of the table
+func (table *Table) Name() string {
+	return table.sheet.Properties.Title
+}
+
+// Spreadsheet spreadsheet holding this table
+func (table *Table) Spreadsheet() *sheets.Spreadsheet {
+	return table.database.Spreadsheet()
+}
+
+// Drop Drops an existing sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
 // If exists, deletes and returns true
 // If not existing, logs and returns false
-func (m *SheetManager) DeleteTable(database *sheets.Spreadsheet, tableName string) bool {
-	sheetToDelete := m.GetTable(database, tableName)
-	if sheetToDelete == nil {
-		// todo: log
-		return false
-	}
-
+func (table *Table) Drop() bool {
 	request := make([]*sheets.Request, 1)
 	request[0] = &sheets.Request{}
 	request[0].DeleteSheet = &sheets.DeleteSheetRequest{}
-	request[0].DeleteSheet.SheetId = sheetToDelete.Properties.SheetId
-	resp, _, _ := m.batchUpdate(database, request)
+	request[0].DeleteSheet.SheetId = table.SheetID()
+	resp, _, _ := table.database.batchUpdate(request)
 	return resp != nil
 }
 
-func (m *SheetManager) batchUpdate(database *sheets.Spreadsheet, requests []*sheets.Request) (*sheets.Spreadsheet, []*sheets.Response, int) {
-	return newSpreadsheetBatchUpdateRequest(m, database.SpreadsheetId, requests...).Do()
+// Metadata Metadata of the table
+func (table *Table) Metadata() *TableMetadata {
+	return table.Metadata()
+}
+
+// UpdateMetadata Reads table's metadata from the server and sync
+func (table *Table) UpdateMetadata() *TableMetadata {
+	// sync
+	table.manager.SynchronizeFromGoogle(table.database)
+	tableName := table.Metadata().Name
+	tableCols := int64(len(table.Metadata().Columns))
+
+	// 0행~2행, 모든 열을 읽는다
+	// 0행
+	req := newSpreadsheetValuesRequest(table.manager, table.Spreadsheet().SpreadsheetId, tableName)
+	req.updateRange(tableName, 0, 0, 2, tableCols)
+	valueRange := req.Do()
+
+	colnames := make([]string, len(table.sheet.Data[0].RowData[0].Values))
+	for i := range colnames {
+		colnames[i] = valueRange.Values[0][i].(string)
+	}
+	// 1행
+	types := make([]reflect.Kind, len(table.sheet.Data[0].RowData[1].Values))
+	for i := range colnames {
+		kindString := valueRange.Values[1][i].(string)
+		types[i] = primitiveStringToKind[kindString]
+	}
+	// 2행
+	rowsString, ok := valueRange.Values[2][0].(string)
+	var rows int64
+	if ok {
+		rows, _ = strconv.ParseInt(rowsString, 10, 64)
+	}
+
+	var constraints = ""
+	if len(valueRange.Values[2]) >= 3 {
+		constraints = valueRange.Values[2][2].(string)
+	}
+	metadata := &TableMetadata{
+		Name:        tableName,
+		Columns:     colnames,
+		Types:       types,
+		Rows:        rows,
+		Constraints: constraints,
+	}
+	return metadata
+}
+
+// Select Selects all the rows from the table
+func (table *Table) Select(rows int64) ([][]interface{}, *TableMetadata) {
+	metadata := table.Metadata()
+	if metadata == nil {
+		fmt.Println("Select: Metadata is nil")
+		return nil, nil
+	}
+	if metadata.Rows == 0 {
+		fmt.Println("Select: Metadata.rows is 0")
+		return nil, nil
+	}
+	if rows == 0 {
+		fmt.Println("Select: rows is 0")
+		return nil, nil
+	} else if rows == -1 {
+		rows = metadata.Rows
+	}
+
+	// 3행~, 모든 열을 읽는다
+	req := newSpreadsheetValuesRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
+	req.updateRange(metadata.Name, 3, 0, 3+rows, int64(len(metadata.Columns))-1)
+	valueRange := req.Do()
+
+	return valueRange.Values, nil
+}
+
+// SelectAndFilter Select rows satisfying filter
+// filters.key: int, column index
+// filters.value: Predicate, whether to select or not
+func (table *Table) SelectAndFilter(filters map[int]Predicate) ([][]interface{}, *TableMetadata) {
+	fullData, _ := table.Select(-1)
+	metadata := table.Metadata()
+	if len(filters) == 0 {
+		return fullData, metadata
+	}
+	if len(fullData) == 0 {
+		return fullData, metadata
+	}
+
+	filtered := make([][]interface{}, 0)
+	for i := range fullData {
+		appropriate := true
+		for j := range fullData[i] {
+			if predicate, ok := filters[j]; ok {
+				appropriate = appropriate && predicate(fullData[i][j])
+			}
+		}
+		if appropriate {
+			filtered = append(filtered, fullData[i])
+		}
+	}
+	return filtered, metadata
+}
+
+// Upsert Upserts given `values`. Returns true if success.
+func (table *Table) Upsert(values []interface{}) bool {
+	if len(values) == 0 {
+		return false
+	}
+	metadata := table.Metadata()
+	if metadata == nil {
+		return false
+	}
+
+	// 3행~, 쓸 수 있는만큼 쓴다
+	req := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
+	req.updateRange(metadata, values)
+	if req.Do()/100 != 2 {
+		return false
+	}
+
+	// 기록한 행 업데이트
+	req.updateRows(metadata, len(values))
+	if req.Do()/100 != 2 {
+		return false
+	}
+	return true
+}
+
+// Delete Deletes and returns deleted rows
+func (table *Table) Delete(filters map[int]Predicate) []int64 {
+	return nil
+}
+
+func (table *Table) updateColumns(source interface{}) bool {
+	return false
 }
 
 func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstance interface{}, constraints ...interface{}) []*sheets.Request {
@@ -186,153 +357,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	return requests
 }
 
-// TableMetadata Metadata of the table
-type TableMetadata struct {
-	Name        string
-	Columns     []string
-	Types       []reflect.Kind
-	Rows        int64
-	Constraints string
-}
-
-// GetTableMetadata Reads table's metadata
-func (m *SheetManager) GetTableMetadata(db *sheets.Spreadsheet, s interface{}) *TableMetadata {
-	tableName := reflect.TypeOf(s).Name()
-	tableCols := reflect.TypeOf(s).NumField()
-
-	// DB를 갱신
-	db = m.SynchronizeFromGoogle(db)
-	table := m.GetTable(db, tableName)
-	if table == nil {
-		return nil
-	}
-
-	// 0행~2행, 모든 열을 읽는다
-	// 0행
-	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, tableName)
-	req.updateRange(tableName, 0, 0, 2, int64(tableCols))
-	valueRange := req.Do()
-
-	colnames := make([]string, len(table.Data[0].RowData[0].Values))
-	for i := range colnames {
-		colnames[i] = valueRange.Values[0][i].(string)
-	}
-	// 1행
-	types := make([]reflect.Kind, len(table.Data[0].RowData[1].Values))
-	for i := range colnames {
-		kindString := valueRange.Values[1][i].(string)
-		types[i] = primitiveStringToKind[kindString]
-	}
-	// 2행
-	rowsString, ok := valueRange.Values[2][0].(string)
-	var rows int64
-	if ok {
-		rows, _ = strconv.ParseInt(rowsString, 10, 64)
-	}
-
-	var constraints = ""
-	if len(valueRange.Values[2]) >= 3 {
-		constraints = valueRange.Values[2][2].(string)
-	}
-	metadata := &TableMetadata{
-		Name:        tableName,
-		Columns:     colnames,
-		Types:       types,
-		Rows:        rows,
-		Constraints: constraints,
-	}
-	return metadata
-}
-
-// Predicate Check if the given interface fits the condition
-type Predicate func(interface{}) bool
-
-// SelectRow Selects all the rows from the table
-func (m *SheetManager) SelectRow(db *sheets.Spreadsheet, s interface{}, rows int64) ([][]interface{}, *TableMetadata) {
-	metadata := m.GetTableMetadata(db, s)
-	if metadata == nil {
-		fmt.Println("SelectRow: Metadata is nil")
-		return nil, nil
-	}
-	if metadata.Rows == 0 {
-		fmt.Println("SelectRow: Metadata.rows is 0")
-		return nil, nil
-	}
-	if rows == 0 {
-		fmt.Println("SelectRow: rows is 0")
-		return nil, nil
-	} else if rows == -1 {
-		rows = metadata.Rows
-	}
-	table := m.GetTable(db, metadata.Name)
-	if table == nil {
-		fmt.Println("SelectRow: table is nil")
-		return nil, nil
-	}
-
-	// 3행~, 모든 열을 읽는다
-	req := newSpreadsheetValuesRequest(m, db.SpreadsheetId, metadata.Name)
-	req.updateRange(metadata.Name, 3, 0, 3+rows, int64(len(metadata.Columns))-1)
-	valueRange := req.Do()
-
-	return valueRange.Values, nil
-}
-
-// SelectRowWithFilter Select rows satisfying filter
-// filters.key: int, column index
-// filters.value: Predicate, whether to select or not
-func (m *SheetManager) SelectRowWithFilter(db *sheets.Spreadsheet, s interface{}, filters map[int]Predicate) [][]interface{} {
-	fullData, _ := m.SelectRow(db, s, -1)
-	if len(filters) == 0 {
-		return fullData
-	}
-	if len(fullData) == 0 {
-		return fullData
-	}
-
-	filtered := make([][]interface{}, 0)
-	for i := range fullData {
-		appropriate := true
-		for j := range fullData[i] {
-			if predicate, ok := filters[j]; ok {
-				appropriate = appropriate && predicate(fullData[i][j])
-			}
-		}
-		if appropriate {
-			filtered = append(filtered, fullData[i])
-		}
-	}
-	return filtered
-}
-
-// Upsert  Upserts given `values`. Returns true if success.
-func (m *SheetManager) Upsert(db *sheets.Spreadsheet, values []interface{}) bool {
-	if len(values) == 0 {
-		return false
-	}
-	metadata := m.GetTableMetadata(db, values[0])
-	if metadata == nil {
-		return false
-	}
-	table := m.GetTable(db, metadata.Name)
-	if table == nil {
-		return false
-	}
-
-	// 3행~, 쓸 수 있는만큼 쓴다
-	req := newSpreadsheetValuesUpdateRequest(m, db.SpreadsheetId, metadata.Name)
-	req.updateRange(metadata, values)
-	if req.Do()/100 != 2 {
-		return false
-	}
-
-	// 기록한 행 업데이트
-	req.updateRows(metadata, len(values))
-	if req.Do()/100 != 2 {
-		return false
-	}
-	return true
-}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // colnames := metadata.Columns
 // 	types := metadata.Types

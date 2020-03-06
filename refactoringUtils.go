@@ -29,6 +29,10 @@ func isPrimitive(i interface{}) bool {
 	return ok
 }
 
+func nameOfStruct(i interface{}) string {
+	return reflect.TypeOf(i).Name()
+}
+
 type structField struct {
 	cname  string
 	ctype  string

@@ -20,15 +20,15 @@ type TestStructMeme struct {
 // create, get, delete
 func TestCreateGetDeleteSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.CreateSpreadsheet("Test First!2")
+	sheet := manager.createSpreadsheet("Test First!2")
 	fmt.Printf("------Created sheet %p------\n", sheet)
 	fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
 	fmt.Println("Sheet Name: ", sheet.Properties.Title)
 	fmt.Println("Sheet Timezone: ", sheet.Properties.TimeZone)
 	sheetId := sheet.SpreadsheetId
-	manager.DeleteSpreadsheet(sheet.SpreadsheetId)
+	manager.deleteSpreadsheet(sheet.SpreadsheetId)
 	fmt.Println("------Deleted sheet ", sheetId, "------")
-	sheet = manager.GetSpreadsheet(sheetId)
+	sheet = manager.getSpreadsheet(sheetId)
 	fmt.Println("------Get sheet ", sheetId, "------")
 	fmt.Println("------    Result ", sheet)
 }
@@ -37,7 +37,7 @@ func TestCreateGetDeleteSpreadsheet(t *testing.T) {
 func TestGetSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
 	sheetID := "1QMUZpqgBCHWEFQ7YEWBwmWwkrtU8yNOTJD0srqt4aFc"
-	sheet := manager.GetSpreadsheet(sheetID)
+	sheet := manager.getSpreadsheet(sheetID)
 	fmt.Println("------Get sheet ", sheetID, "------")
 	fmt.Println("------    Result ", sheet.SpreadsheetId)
 }
@@ -45,7 +45,7 @@ func TestGetSpreadsheet(t *testing.T) {
 // create
 func TestCreateSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.CreateSpreadsheet("Testing!")
+	sheet := manager.createSpreadsheet("Testing!")
 	fmt.Println("------Created sheet------")
 	fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
 	fmt.Println("Sheet Name: ", sheet.Properties.Title)
@@ -55,9 +55,9 @@ func TestCreateSpreadsheet(t *testing.T) {
 // list
 func TestListSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheets := manager.ListSpreadsheets()
+	sheets := manager.listSpreadsheets()
 	for _, s := range sheets {
-		sheet := manager.GetSpreadsheet(s)
+		sheet := manager.getSpreadsheet(s)
 		fmt.Println("------Listing sheet------")
 		fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
 		fmt.Println("Sheet Name: ", sheet.Properties.Title)
@@ -68,13 +68,13 @@ func TestListSpreadsheet(t *testing.T) {
 // Delete
 func TestDeleteSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.FindSpreadsheet(dbFileStart + "testdb")
+	sheet := manager.findSpreadsheet(dbFileStart + "testdb")
 	fmt.Println("------Found sheet------")
 	fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
 	fmt.Println("Sheet Name: ", sheet.Properties.Title)
 	fmt.Println("Sheet Timezone: ", sheet.Properties.TimeZone)
 	sheetId := sheet.SpreadsheetId
-	if manager.DeleteSpreadsheet(sheet.SpreadsheetId) {
+	if manager.deleteSpreadsheet(sheet.SpreadsheetId) {
 		fmt.Println("------Deleted sheet ", sheetId, "------")
 	}
 }
@@ -82,7 +82,7 @@ func TestDeleteSpreadsheet(t *testing.T) {
 // Find
 func TestSpreadsheet005(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.FindSpreadsheet("Test First!")
+	sheet := manager.findSpreadsheet("Test First!")
 	if sheet != nil {
 		fmt.Println("------Listing sheet------")
 		fmt.Println("Sheet ID: ", sheet.SpreadsheetId)
@@ -94,7 +94,7 @@ func TestSpreadsheet005(t *testing.T) {
 // Create DB
 func TestSpreadsheet006(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.CreateDatabase("testdb")
+	sheet := manager.Database("testdb")
 	if sheet != nil {
 		fmt.Println("------Listing sheet------")
 		fmt.Println("Sheet ID: ", sheet.SpreadsheetId)

@@ -15,6 +15,10 @@ const dbFileStart = "database_file_"
 const tableDataStartRowIndex = 3
 const tableDataStartColumnIndex = 0
 
+/*
+ * SheetManager api
+ */
+
 // SheetManager Manage OAuth2 token lifecycle
 type SheetManager struct {
 	client  *http.Client
@@ -48,18 +52,96 @@ func (m *SheetManager) RefreshToken() {
 	return
 }
 
-// CreateSpreadsheet creates a single spreadsheet file
-func (m *SheetManager) CreateSpreadsheet(title string) *sheets.Spreadsheet {
+/*
+ * Database api
+ */
+
+// Database Wrapper for *sheets.Spreadsheet
+type Database struct {
+	manager     *SheetManager
+	spreadsheet *sheets.Spreadsheet
+}
+
+// Manager Proxy
+func (m *Database) Manager() *SheetManager {
+	return m.manager
+}
+
+// Spreadsheet Proxy
+func (m *Database) Spreadsheet() *sheets.Spreadsheet {
+	return m.spreadsheet
+}
+
+// Sheets Proxy
+func (m *Database) Sheets() []*sheets.Sheet {
+	return m.spreadsheet.Sheets
+}
+
+// CreateDatabase creates a new database with the given database_file_`title`.
+// Be careful, 'database_file_' tag is on the start of the title.
+func (m *SheetManager) CreateDatabase(title string) *Database {
+	db := m.createSpreadsheet(dbFileStart + title)
+	return &Database{
+		manager:     m,
+		spreadsheet: db,
+	}
+}
+
+// FindDatabase gets a new database with the given database_file_`title`, if exists.
+// If not existing, it will return nil.
+// Be careful, 'database_file_' tag is on the start of the title finding for.
+func (m *SheetManager) FindDatabase(title string) *Database {
+	if db := m.findSpreadsheet(dbFileStart + title); db != nil {
+		return &Database{
+			manager:     m,
+			spreadsheet: db,
+		}
+	}
+	return nil
+}
+
+// DeleteDatabase deletes a database with the given database_file_`title`, if exists.
+// If not existing, or failed to delete, it will log and return false.
+// Be careful, 'database_file_' tag is implicitly on the start of the title finding for.
+func (m *SheetManager) DeleteDatabase(title string) bool {
+	db := m.FindDatabase(title)
+	if db == nil {
+		return false
+	}
+	return m.deleteSpreadsheet(db.spreadsheet.SpreadsheetId)
+}
+
+// SynchronizeFromGoogle Synchronize data from google
+func (m *SheetManager) SynchronizeFromGoogle(db *Database) *Database {
+	if db == nil {
+		return nil
+	}
+
+	rawDB := m.getSpreadsheet(db.spreadsheet.SpreadsheetId)
+	if rawDB == nil {
+		fmt.Printf("[SheetManager] SyncDatabaseToGoogle: DB is nil")
+		return nil
+	}
+	db.spreadsheet = rawDB
+	return db
+}
+
+/*
+ * Database api implementations
+ */
+
+// createSpreadsheet creates a single spreadsheet file
+func (m *SheetManager) createSpreadsheet(title string) *sheets.Spreadsheet {
 	// check duplicated title
-	if m.FindSpreadsheet(title) != nil {
+	if m.findSpreadsheet(title) != nil {
 		return nil
 	}
 
 	return newSpreadsheetCreateRequest(m, title).Do()
 }
 
-// GetSpreadsheet gets a single spreadsheet file with id, if exists.
-func (m *SheetManager) GetSpreadsheet(spreadsheetID string) *sheets.Spreadsheet {
+// getSpreadsheet gets a single spreadsheet file with id, if exists.
+func (m *SheetManager) getSpreadsheet(spreadsheetID string) *sheets.Spreadsheet {
 	req := m.service.Spreadsheets.Get(spreadsheetID).IncludeGridData(true)
 	req.Header().Add("Authorization", "Bearer "+m.token.AccessToken)
 	resp, err := req.Do()
@@ -69,18 +151,18 @@ func (m *SheetManager) GetSpreadsheet(spreadsheetID string) *sheets.Spreadsheet 
 	return resp
 }
 
-// DeleteSpreadsheet deletes spreadsheet file with `spreadsheetId`
+// deleteSpreadsheet deletes spreadsheet file with `spreadsheetId`
 // Returns true if deleted(status code 20X)
 //         false if else
 // https://stackoverflow.com/questions/46836393/how-do-i-delete-a-spreadsheet-file-using-google-spreadsheets-api
 // https://stackoverflow.com/questions/46310113/consume-a-delete-endpoint-from-golang
-func (m *SheetManager) DeleteSpreadsheet(spreadsheetID string) bool {
+func (m *SheetManager) deleteSpreadsheet(spreadsheetID string) bool {
 	resp := newURLRequest(m, delete, fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s", spreadsheetID)).Do()
 	return resp.StatusCode/100 == 2
 }
 
-// ListSpreadsheets lists spreadsheets' id by []string
-func (m *SheetManager) ListSpreadsheets() []string {
+// listSpreadsheets lists spreadsheets' id by []string
+func (m *SheetManager) listSpreadsheets() []string {
 	req := newURLRequest(m, get, "https://www.googleapis.com/drive/v3/files")
 	// https://stackoverflow.com/questions/30652577/go-doing-a-get-request-and-building-the-querystring
 	// https://developers.google.com/drive/api/v3/mime-types
@@ -129,11 +211,11 @@ func (m *SheetManager) ListSpreadsheets() []string {
 	return sheetArr
 }
 
-// FindSpreadsheet finds a spreadsheet with `title`
-func (m *SheetManager) FindSpreadsheet(title string) *sheets.Spreadsheet {
-	sheetIDs := m.ListSpreadsheets()
+// findSpreadsheet finds a spreadsheet with `title`
+func (m *SheetManager) findSpreadsheet(title string) *sheets.Spreadsheet {
+	sheetIDs := m.listSpreadsheets()
 	for _, sheetID := range sheetIDs {
-		s := m.GetSpreadsheet(sheetID)
+		s := m.getSpreadsheet(sheetID)
 		if s.Properties.Title == title {
 			return s
 		}
@@ -142,48 +224,8 @@ func (m *SheetManager) FindSpreadsheet(title string) *sheets.Spreadsheet {
 }
 
 /*
- * Database alias api
+ * Internal methods
  */
-
-// CreateDatabase creates a new database with the given database_file_`title`.
-// Be careful, 'database_file_' tag is on the start of the title.
-func (m *SheetManager) CreateDatabase(title string) *sheets.Spreadsheet {
-	return m.CreateSpreadsheet(dbFileStart + title)
-}
-
-// FindDatabase gets a new database with the given database_file_`title`, if exists.
-// If not existing, it will return nil.
-// Be careful, 'database_file_' tag is on the start of the title finding for.
-func (m *SheetManager) FindDatabase(title string) *sheets.Spreadsheet {
-	return m.FindSpreadsheet(dbFileStart + title)
-}
-
-// DeleteDatabase deletes a database with the given database_file_`title`, if exists.
-// If not existing, or failed to delete, it will log and return false.
-// Be careful, 'database_file_' tag is implicitly on the start of the title finding for.
-func (m *SheetManager) DeleteDatabase(title string) bool {
-	db := m.FindDatabase(title)
-	if db == nil {
-		return false
-	}
-	return m.DeleteSpreadsheet(db.SpreadsheetId)
-}
-
-// SynchronizeFromGoogle Synchronize data from google
-func (m *SheetManager) SynchronizeFromGoogle(db *sheets.Spreadsheet) *sheets.Spreadsheet {
-	if db == nil {
-		return nil
-	}
-
-	db = m.GetSpreadsheet(db.SpreadsheetId)
-	if db == nil {
-		fmt.Printf("[SheetManager] SyncDatabaseToGoogle: DB is nil")
-		return nil
-	}
-	return db
-}
-
-// Internal Methods
 
 type httpRequest interface {
 	Header() http.Header
