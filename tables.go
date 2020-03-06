@@ -163,8 +163,8 @@ func (table *Table) Metadata() *TableMetadata {
 	return table.metadata
 }
 
-// UpdateMetadata Reads table's metadata from the server and sync
-func (table *Table) UpdateMetadata() *TableMetadata {
+// UpdatedMetadata Reads table's metadata from the server and sync
+func (table *Table) UpdatedMetadata() *TableMetadata {
 	// sync
 	table.manager.SynchronizeFromGoogle(table.database)
 	tableName := table.Name()
@@ -211,11 +211,7 @@ func (table *Table) UpdateMetadata() *TableMetadata {
 // Select Selects all the rows from the table
 func (table *Table) Select(rows int64) ([][]interface{}, *TableMetadata) {
 	// sync
-	defer func() {
-		// sync
-		table.UpdateMetadata()
-	}()
-	metadata := table.Metadata()
+	metadata := table.UpdatedMetadata()
 	if metadata == nil {
 		fmt.Println("Select: Metadata is nil")
 		return nil, nil
@@ -235,10 +231,6 @@ func (table *Table) Select(rows int64) ([][]interface{}, *TableMetadata) {
 	req := newSpreadsheetValuesRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
 	req.updateRange(metadata.Name, 3, 0, 3+rows, int64(len(metadata.Columns)))
 	valueRange := req.Do()
-	fmt.Println("VALUE RANGE", valueRange.Range)
-	for i := range valueRange.Values {
-		fmt.Printf("VALUE VALUES[%d] %+v\n", i, valueRange.Values[i])
-	}
 
 	return valueRange.Values, metadata
 }
@@ -279,11 +271,10 @@ func (table *Table) UpsertIf(values []interface{}, condition ...map[int]func(int
 
 	defer func() {
 		// sync
-		table.UpdateMetadata()
+		table.UpdatedMetadata()
 	}()
 
-	table.manager.SynchronizeFromGoogle(table.database)
-	metadata := table.Metadata()
+	metadata := table.UpdatedMetadata()
 	if metadata == nil {
 		return false
 	}
@@ -317,9 +308,10 @@ func (table *Table) UpsertArrayIf(values [][]interface{}, condition ...map[int]f
 
 	defer func() {
 		// sync
-		table.UpdateMetadata()
+		table.UpdatedMetadata()
 	}()
-	metadata := table.Metadata()
+
+	metadata := table.UpdatedMetadata()
 	if metadata == nil {
 		return false
 	}
@@ -350,7 +342,7 @@ func (table *Table) UpsertArrayIf(values [][]interface{}, condition ...map[int]f
 func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	defer func() {
 		// sync
-		table.UpdateMetadata()
+		table.UpdatedMetadata()
 	}()
 	// call data
 	data, metadata := table.Select(-1)
