@@ -1,6 +1,7 @@
 package gosheet
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -16,7 +17,7 @@ import (
 // Case handling:
 // database == nil: return nil
 // database != nil: log as creating, and return the created sheet with true
-func (db *Database) CreateTable(scheme interface{}, constraints ...interface{}) *Table {
+func (db *Database) CreateTable(scheme interface{}, constraint ...*Constraint) *Table {
 	// 1. Create new
 	if db.Spreadsheet() == nil {
 		// todo: log
@@ -45,12 +46,8 @@ func (db *Database) CreateTable(scheme interface{}, constraints ...interface{}) 
 		}
 	}
 
-	if len(constraints) > 0 {
-
-	}
-
-	// Apply constraints and other requests
-	requests := db.manager.createColumnsFromStruct(newSheet, scheme, constraints...)
+	// Apply requests
+	requests := db.manager.createColumnsFromStruct(newSheet, scheme, constraint...)
 	updated, _, statusCode := db.batchUpdate(requests)
 	if updated == nil {
 		return nil
@@ -396,7 +393,7 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	return deletedIndex
 }
 
-func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstance interface{}, constraints ...interface{}) []*sheets.Request {
+func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstance interface{}, constraint ...*Constraint) []*sheets.Request {
 	if table == nil {
 		return nil
 	}
@@ -444,7 +441,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	data[2].Values = make([]*sheets.CellData, 2)
 	data[2].Values[0] = &sheets.CellData{}
 	data[2].Values[1] = &sheets.CellData{}
-	if len(constraints) > 0 {
+	if len(constraint) > 0 {
 		data[2].Values = append(data[2].Values, &sheets.CellData{})
 		data[2].Values[2] = &sheets.CellData{}
 	}
@@ -452,13 +449,74 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	data[2].Values[0].UserEnteredValue.StringValue = "0"
 	data[2].Values[1].UserEnteredValue = &sheets.ExtendedValue{}
 	data[2].Values[1].UserEnteredValue.NumberValue = float64(len(fields))
-	if len(constraints) > 0 {
+	if len(constraint) > 0 {
 		data[2].Values[2].UserEnteredValue = &sheets.ExtendedValue{}
-		// todo: write constraints
+		constraintBytes, err := json.Marshal(constraint[0].CreateConstraint())
+		if err != nil {
+			panic(err)
+		}
+		data[2].Values[2].UserEnteredValue.StringValue = string(constraintBytes)
 	}
 
 	requests[0].UpdateCells.Rows = data
 	return requests
+}
+
+type Constraint struct {
+	primaryKey    []string
+	autoIncrement bool
+
+	uniqueColumns []string
+}
+
+func NewConstraint() *Constraint {
+	return &Constraint{
+		primaryKey:    make([]string, 0),
+		autoIncrement: false,
+		uniqueColumns: make([]string, 0),
+	}
+}
+
+func (c *Constraint) PrimaryKey(key string, isAutoIncrement bool) *Constraint {
+	if key == "" {
+		c.primaryKey = make([]string, 0)
+	} else {
+		if len(c.primaryKey) == 0 {
+			c.primaryKey = make([]string, 1)
+		}
+		c.primaryKey[0] = key
+		c.autoIncrement = isAutoIncrement
+	}
+	return c
+}
+
+func (c *Constraint) UniqueColumns(columns ...string) *Constraint {
+	// Check if valid
+	if len(columns) > 0 && len(columns) == len(c.uniqueColumns) {
+		allSame := true
+		for i := range columns {
+			allSame = allSame && (columns[i] == c.uniqueColumns[i])
+		}
+		if allSame {
+			panic("Unique Constraint shouldn't be equal to before")
+		}
+	}
+
+	c.uniqueColumns = columns
+	return c
+}
+
+func (c *Constraint) CreateConstraint() map[string]interface{} {
+	if c == nil {
+		panic("Constraiant is nil")
+	}
+
+	constraintMap := make(map[string]interface{})
+	constraintMap["primarykey"] = c.primaryKey
+	constraintMap["autoIncrement"] = c.autoIncrement
+	constraintMap["uniqueColumns"] = c.uniqueColumns
+
+	return constraintMap
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
