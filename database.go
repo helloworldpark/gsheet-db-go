@@ -452,11 +452,6 @@ func rangeString(metadata *TableMetadata, startRow, appendingRow int64) cellRang
 	const startCol = tableDataStartColumnIndex
 	endCol := int64(startCol + len(metadata.Columns))
 
-	fmt.Println("startRow: ", startRow)
-	fmt.Println("endRow: ", endRow)
-	fmt.Println("startCol: ", startCol)
-	fmt.Println("endCol: ", endCol)
-
 	ranges := newCellRange(metadata.Name, startRow, startCol, endRow, endCol)
 	return ranges
 }
@@ -484,7 +479,6 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []
 	startRow := metadata.Rows + tableDataStartRowIndex
 	ranges := rangeString(metadata, startRow, int64(len(values)))
 	r.ranges = ranges.String()
-	fmt.Println("UpdateRange: ", r.ranges)
 	return true
 }
 

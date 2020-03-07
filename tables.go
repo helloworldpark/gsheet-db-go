@@ -45,11 +45,9 @@ func (db *Database) CreateTable(scheme interface{}, constraints ...interface{}) 
 		}
 	}
 
-	// TODO
-	// if len(constraints) > 0
-	// if len(constraints) > 0 {
+	if len(constraints) > 0 {
 
-	// }
+	}
 
 	// Apply constraints and other requests
 	requests := db.manager.createColumnsFromStruct(newSheet, scheme, constraints...)
@@ -358,10 +356,8 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 		if deleteThis(values) {
 			// add to deleted index
 			deletedIndex = append(deletedIndex, int64(i))
-			fmt.Println("Deleted ", i)
 		} else {
 			newData = append(newData, values)
-			fmt.Println("Saved ", i)
 		}
 	}
 
