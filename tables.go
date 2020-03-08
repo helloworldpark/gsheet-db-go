@@ -259,7 +259,8 @@ func (table *Table) SelectAndFilter(filters map[int]Predicate) ([][]interface{},
 }
 
 // UpsertIf Upserts given `values`. Returns true if success.
-func (table *Table) UpsertIf(values []interface{}, condition ...map[int]func(interface{}) bool) bool {
+// condition.key: column index
+func (table *Table) UpsertIf(values []interface{}, conditions ...map[int]func(interface{}) bool) bool {
 	if len(values) == 0 {
 		return false
 	}
@@ -274,7 +275,34 @@ func (table *Table) UpsertIf(values []interface{}, condition ...map[int]func(int
 		return false
 	}
 
-	if len(condition) == 0 {
+	var filteredValues []interface{}
+	if len(conditions) == 0 {
+		filteredValues = values
+	} else {
+		if metadata.Constraints != nil {
+			// 비교할 이전 데이터(인덱스)
+			// 새 데이터(인덱스)
+		}
+
+		for i := range values {
+			item := values[i]
+			columnwiseValues := analyseStruct(item)
+			didPass := true
+		TESTITEM:
+			for _, condition := range conditions {
+				for j, f := range condition {
+					if !f(columnwiseValues[j].cvalue) {
+						didPass = false
+						break TESTITEM
+					}
+				}
+			}
+			if didPass {
+				filteredValues = append(filteredValues, item)
+			}
+		}
+	}
+	if len(filteredValues) > 0 {
 		// 3행~, 쓸 수 있는만큼 쓴다
 		req := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
 		req.updateRange(metadata, values)
@@ -287,15 +315,13 @@ func (table *Table) UpsertIf(values []interface{}, condition ...map[int]func(int
 		if req.Do()/100 != 2 {
 			return false
 		}
-	} else {
-
 	}
 
 	return true
 }
 
 // UpsertArrayIf Upserts given `values`. Returns true if success.
-func (table *Table) UpsertArrayIf(values [][]interface{}, condition ...map[int]func(interface{}) bool) bool {
+func (table *Table) UpsertArrayIf(values [][]interface{}, conditions ...map[int]func(interface{}) bool) bool {
 
 	if len(values) == 0 {
 		return false
@@ -311,21 +337,39 @@ func (table *Table) UpsertArrayIf(values [][]interface{}, condition ...map[int]f
 		return false
 	}
 
-	if len(condition) == 0 {
+	var filteredValues [][]interface{}
+	if len(conditions) == 0 {
+		filteredValues = values
+	} else {
+		for i := range values {
+			didPass := true
+		TESTITEM:
+			for _, condition := range conditions {
+				for j, f := range condition {
+					if !f(values[i][j]) {
+						didPass = false
+						break TESTITEM
+					}
+				}
+			}
+			if didPass {
+				filteredValues = append(filteredValues, values[i])
+			}
+		}
+	}
+	if len(filteredValues) > 0 {
 		// 3행~, 쓸 수 있는만큼 쓴다
 		req := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
-		req.updateRangeWithArray(metadata, values)
+		req.updateRangeWithArray(metadata, filteredValues)
 		if req.Do()/100 != 2 {
 			return false
 		}
 
 		// 기록한 행 업데이트
-		req.updateRows(metadata, len(values))
+		req.updateRows(metadata, len(filteredValues))
 		if req.Do()/100 != 2 {
 			return false
 		}
-	} else {
-
 	}
 
 	return true
