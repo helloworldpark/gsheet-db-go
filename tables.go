@@ -117,7 +117,7 @@ type TableMetadata struct {
 	Columns     []string
 	Types       []reflect.Kind
 	Rows        int64
-	Constraints string
+	Constraints *Constraint
 }
 
 // Predicate Check if the given interface fits the condition
@@ -188,16 +188,16 @@ func (table *Table) UpdatedMetadata() *TableMetadata {
 		rows, _ = strconv.ParseInt(rowsString, 10, 64)
 	}
 
-	var constraints = ""
+	var constraint = ""
 	if len(valueRange.Values[2]) >= 3 {
-		constraints = valueRange.Values[2][2].(string)
+		constraint = valueRange.Values[2][2].(string)
 	}
 	metadata := &TableMetadata{
 		Name:        tableName,
 		Columns:     colnames,
 		Types:       types,
 		Rows:        rows,
-		Constraints: constraints,
+		Constraints: NewConstraintFromString(constraint),
 	}
 	table.metadata = metadata
 	return metadata
@@ -451,7 +451,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	data[2].Values[1].UserEnteredValue.NumberValue = float64(len(fields))
 	if len(constraint) > 0 {
 		data[2].Values[2].UserEnteredValue = &sheets.ExtendedValue{}
-		constraintBytes, err := json.Marshal(constraint[0].CreateConstraint())
+		constraintBytes, err := json.Marshal(constraint[0].ToMap())
 		if err != nil {
 			panic(err)
 		}
@@ -474,6 +474,19 @@ func NewConstraint() *Constraint {
 		primaryKey:    make([]string, 0),
 		autoIncrement: false,
 		uniqueColumns: make([]string, 0),
+	}
+}
+
+func NewConstraintFromString(str string) *Constraint {
+	constraintMap := make(map[string]interface{})
+	err := json.Unmarshal([]byte(str), constraintMap)
+	if err != nil {
+		panic(err)
+	}
+	return &Constraint{
+		primaryKey:    constraintMap["primaryKey"].([]string),
+		autoIncrement: constraintMap["autoIncrement"].(bool),
+		uniqueColumns: constraintMap["uniqueColumns"].([]string),
 	}
 }
 
@@ -506,7 +519,7 @@ func (c *Constraint) UniqueColumns(columns ...string) *Constraint {
 	return c
 }
 
-func (c *Constraint) CreateConstraint() map[string]interface{} {
+func (c *Constraint) ToMap() map[string]interface{} {
 	if c == nil {
 		panic("Constraiant is nil")
 	}

@@ -151,9 +151,9 @@ func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
 	// todo: error check
 	rows, _ := strconv.ParseInt(valueRange.Values[2][0].(string), 10, 64)
 	cols, _ := strconv.ParseInt(valueRange.Values[2][1].(string), 10, 64)
-	constraints := ""
+	constraint := ""
 	if len(valueRange.Values[2]) > 2 {
-		constraints = valueRange.Values[2][2].(string)
+		constraint = valueRange.Values[2][2].(string)
 	}
 
 	colnames := make([]string, cols)
@@ -169,7 +169,8 @@ func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
 	table.manager = m.manager
 	table.metadata = &TableMetadata{}
 	table.metadata.Columns = colnames
-	table.metadata.Constraints = constraints
+
+	table.metadata.Constraints = NewConstraintFromString(constraint)
 	table.metadata.Name = sheet.Properties.Title
 	table.metadata.Rows = rows
 	table.metadata.Types = dtypes
