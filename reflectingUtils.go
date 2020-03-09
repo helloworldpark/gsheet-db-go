@@ -8,6 +8,10 @@ import (
 var primitiveStringToKind = make(map[string]reflect.Kind)
 var primitiveKindToString = make(map[reflect.Kind]string)
 
+func init() {
+	initPrimitiveKind()
+}
+
 func initPrimitiveKind() {
 	if len(primitiveStringToKind) > 0 {
 		return

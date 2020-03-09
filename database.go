@@ -17,10 +17,6 @@ const dbFileStart = "database_file_"
 const tableDataStartRowIndex = 3
 const tableDataStartColumnIndex = 0
 
-func init() {
-	initPrimitiveKind()
-}
-
 /*
  * SheetManager api
  */
@@ -283,10 +279,6 @@ func (m *SheetManager) findSpreadsheet(title string) *sheets.Spreadsheet {
  * Internal methods
  */
 
-type httpRequest interface {
-	Header() http.Header
-}
-
 type httpMethod string
 
 const (
@@ -310,11 +302,6 @@ func newURLRequest(manager *SheetManager, method httpMethod, url string) *httpUR
 		req:     req,
 		manager: manager,
 	}
-}
-
-// interface httpRequest
-func (r *httpURLRequest) Header() http.Header {
-	return r.req.Header
 }
 
 func (r *httpURLRequest) AddQuery(key, value string) *httpURLRequest {
@@ -513,4 +500,31 @@ func (r *httpUpdateValuesRequest) Do() int {
 		panic(err)
 	}
 	return updatedRange.HTTPStatusCode
+}
+
+type clearValuesRequest struct {
+	manager       *SheetManager
+	ranges        cellRange
+	spreadsheetID string
+}
+
+func newClearValuesRequest(manager *SheetManager, spreadsheetID string, ranges cellRange) *clearValuesRequest {
+	return &clearValuesRequest{
+		manager:       manager,
+		ranges:        ranges,
+		spreadsheetID: spreadsheetID,
+	}
+}
+
+func (r *clearValuesRequest) Do() int {
+	r.manager.RefreshToken()
+	clearRequest := &sheets.ClearValuesRequest{}
+	req := r.manager.service.Spreadsheets.Values.Clear(r.spreadsheetID, r.ranges.String(), clearRequest)
+	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
+	resp, err := req.Do()
+	if err != nil {
+		fmt.Println(err.Error())
+		return 400
+	}
+	return resp.HTTPStatusCode
 }

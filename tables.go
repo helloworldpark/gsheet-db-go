@@ -325,7 +325,6 @@ func (table *Table) UpsertIf(values []interface{}, conditions ...map[int]func(in
 
 // UpsertArrayIf Upserts given `values`. Returns true if success.
 func (table *Table) UpsertArrayIf(values [][]interface{}, conditions ...map[int]func(interface{}) bool) bool {
-
 	if len(values) == 0 {
 		return false
 	}
@@ -393,7 +392,6 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	if data == nil {
 		return nil
 	}
-	fmt.Printf("AAAA: %+v\n", metadata)
 
 	// delete if predicate==true
 	newData := make([][]interface{}, 0)
@@ -420,14 +418,9 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	endRow := int64(3 + len(data))
 	endCol := int64(len(metadata.Columns))
 	ranges := newCellRange(metadata.Name, startRow, startCol, endRow, endCol)
-
-	clearRequest := &sheets.ClearValuesRequest{}
-	table.manager.RefreshToken()
-	req := table.manager.service.Spreadsheets.Values.Clear(table.Spreadsheet().SpreadsheetId, ranges.String(), clearRequest)
-	req.Header().Add("Authorization", "Bearer "+table.manager.token.AccessToken)
-	_, err := req.Do()
-	if err != nil {
-		panic(err)
+	clearRequest := newClearValuesRequest(table.manager, table.Spreadsheet().SpreadsheetId, ranges)
+	if clearRequest.Do()/100 != 2 {
+		panic("Cannot clear old data")
 	}
 
 	// subtract row counts
