@@ -50,7 +50,6 @@ func (db *Database) CreateTable(scheme interface{}, constraint ...*Constraint) *
 	requests := db.manager.createColumnsFromStruct(newSheet, scheme, constraint...)
 	updated, _, statusCode := db.batchUpdate(requests)
 	if updated == nil {
-		fmt.Println("Create Table Status code ", statusCode)
 		return nil
 	}
 	for _, updatedSheet := range updated.Sheets() {
@@ -289,7 +288,6 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 
 		for i := range values {
 			item := values[i]
-			fmt.Println("MMMM", item)
 			testColumnValues, ok := item.([]interface{})
 			if !ok {
 				columnwiseAnalyse := analyseStruct(item)
@@ -466,7 +464,11 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 }
 
 func (table *Table) updateIndex() {
-	fmt.Println("UpdateIndex")
+	// if no constraint, no db update
+	if table.Metadata().Constraints == nil {
+		fmt.Println("No constraint to create or maintain index")
+		return
+	}
 	// if no index, create
 	if table.index == nil {
 		table.index = NewTableIndex()

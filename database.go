@@ -476,13 +476,7 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, appendDat
 			}
 		}
 	}
-	fmt.Println("updateRange ", values[0])
-	for i := range r.updatingValues {
-		for j := range r.updatingValues[i] {
-			fmt.Printf("%v ", r.updatingValues[i][j])
-		}
-		fmt.Println()
-	}
+
 	startRow := tableDataStartRowIndex
 	if appendData {
 		startRow += metadata.Rows

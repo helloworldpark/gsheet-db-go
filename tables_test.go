@@ -101,19 +101,26 @@ func TestCreateDatabase(t *testing.T) {
 	describeDatabase(database)
 }
 
-// Create table
-func TestCreateTable(t *testing.T) {
+// Create table with index
+func TestCreateTableWithIndex(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
 	db := manager.FindDatabase("testdb")
 	if db == nil {
 		t.Fatalf("database %s is nil", "testdb")
 	}
 
-	table := db.CreateTable(TestStructMeme{})
+	constraint := NewConstraint()
+	constraint.UniqueColumns("Name1", "Name2")
+	table := db.CreateTable(TestStructMeme{}, constraint)
 	fmt.Printf("DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
 
 	tableMeta := table.Metadata()
 	fmt.Printf("Metadata: \n%+v\n", *tableMeta)
+
+	tableIndex := table.index
+	for i, v := range tableIndex.indices {
+		fmt.Printf("Idx[%d] %v\n", i, v)
+	}
 }
 
 // List tables
@@ -360,26 +367,4 @@ func TestDeleteRow(t *testing.T) {
 		fmt.Printf("\n")
 	}
 	fmt.Println("------4")
-}
-
-// Create table with index
-func TestCreateTableWithIndex(t *testing.T) {
-	manager := NewSheetManager(jsonPath)
-	db := manager.FindDatabase("testdb")
-	if db == nil {
-		t.Fatalf("database %s is nil", "testdb")
-	}
-
-	constraint := NewConstraint()
-	constraint.UniqueColumns("Name1", "Name2")
-	table := db.CreateTable(TestStructMeme{}, constraint)
-	fmt.Printf("DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
-
-	tableMeta := table.Metadata()
-	fmt.Printf("Metadata: \n%+v\n", *tableMeta)
-
-	tableIndex := table.index
-	for i, v := range tableIndex.indices {
-		fmt.Printf("Idx[%d] %v\n", i, v)
-	}
 }
