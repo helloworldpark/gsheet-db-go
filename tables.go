@@ -116,6 +116,7 @@ type Table struct {
 type TableMetadata struct {
 	Name        string
 	Columns     []string
+	ColumnMap   map[string]int64
 	Types       []reflect.Kind
 	Rows        int64
 	Constraints *Constraint
@@ -277,22 +278,42 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 		return false
 	}
 
+	newValues := make([]interface{}, 0)
+TESTCONSTRAINT:
+	for i := range values {
+		item := values[i]
+		testColumnValues, ok := item.([]interface{})
+		if !ok {
+			columnwiseAnalyse := analyseStruct(item)
+			for _, v := range columnwiseAnalyse {
+				testColumnValues = append(testColumnValues, v.cvalue)
+			}
+		}
+		// constraint check
+		if metadata.Constraints != nil {
+			fmt.Println("INSERRTIGNSDLKJFDJFLK")
+			columns := metadata.Constraints.uniqueColumns
+			hasIndex, _ := table.index.HasIndex(testColumnValues, table.metadata.columnsToIndices(columns)...)
+			fmt.Println("Has Index? ", hasIndex)
+			if hasIndex {
+				fmt.Println("Constraint caught: ")
+				continue TESTCONSTRAINT
+			}
+		}
+		newValues = append(newValues, item)
+	}
+
 	var filteredValues []interface{}
 	if len(conditions) == 0 {
-		filteredValues = values
+		filteredValues = newValues
 	} else {
-		if metadata.Constraints != nil {
-			// 비교할 이전 데이터(인덱스)
-			// 새 데이터(인덱스)
-		}
-
-		for i := range values {
-			item := values[i]
+		for i := range newValues {
+			item := newValues[i]
 			testColumnValues, ok := item.([]interface{})
 			if !ok {
 				columnwiseAnalyse := analyseStruct(item)
 				for _, v := range columnwiseAnalyse {
-					testColumnValues = append(testColumnValues, v)
+					testColumnValues = append(testColumnValues, v.cvalue)
 				}
 			}
 
@@ -307,7 +328,7 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 				}
 			}
 			if didPass {
-				filteredValues = append(filteredValues, values[i])
+				filteredValues = append(filteredValues, newValues[i])
 			}
 		}
 	}
@@ -315,13 +336,13 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 		// 데이터를 덧붙인다면 마지막 행부터
 		// 처음부터라면 첫 행부터
 		req := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
-		req.updateRange(metadata, appendData, values)
+		req.updateRange(metadata, appendData, newValues)
 		if req.Do()/100 != 2 {
 			return false
 		}
 
 		// 기록한 행 업데이트
-		req.updateRows(metadata, len(values))
+		req.updateRows(metadata, len(newValues))
 		if req.Do()/100 != 2 {
 			return false
 		}
@@ -362,14 +383,6 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	}
 
 	// update deleted data
-	for i := range newData {
-		v := newData[i].([]interface{})
-		fmt.Printf("%d ", i)
-		for j := range v {
-			fmt.Printf("%v ", v[j])
-		}
-		fmt.Println()
-	}
 	table.UpsertIf(newData, false)
 
 	// reorder data: batch clear
@@ -464,7 +477,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 }
 
 func (table *Table) updateIndex() {
-	// if no constraint, no db update
+	// if no constraint, no index update
 	if table.Metadata().Constraints == nil {
 		fmt.Println("No constraint to create or maintain index")
 		return
@@ -496,6 +509,22 @@ func (table *Table) updateIndex() {
 		}
 	}
 	table.index.Build(data, constraintIndex...)
+	fmt.Println("Index: ", table.index.indices)
+}
+
+func (metadata *TableMetadata) columnsToIndices(columns []string) []int64 {
+	if metadata.ColumnMap == nil {
+		tmp := make(map[string]int64)
+		for i, c := range metadata.Columns {
+			tmp[c] = int64(i)
+		}
+		metadata.ColumnMap = tmp
+	}
+	result := make([]int64, len(columns))
+	for i, c := range columns {
+		result[i] = metadata.ColumnMap[c]
+	}
+	return result
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////

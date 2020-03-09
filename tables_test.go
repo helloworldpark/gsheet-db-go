@@ -17,6 +17,11 @@ type TestStructMeme struct {
 	Name6 bool
 }
 
+type TestStructSmall struct {
+	Yes  bool
+	Name string
+}
+
 func describeDatabase(db *Database) {
 	fmt.Println("Sheet ID: ", db.Spreadsheet().SpreadsheetId)
 	fmt.Println("Sheet Name: ", db.Spreadsheet().Properties.Title)
@@ -119,7 +124,7 @@ func TestCreateTableWithIndex(t *testing.T) {
 
 	tableIndex := table.index
 	for i, v := range tableIndex.indices {
-		fmt.Printf("Idx[%d] %v\n", i, v)
+		fmt.Printf("Idx[%s] %v\n", i, v)
 	}
 }
 
@@ -367,4 +372,66 @@ func TestDeleteRow(t *testing.T) {
 		fmt.Printf("\n")
 	}
 	fmt.Println("------4")
+}
+
+func TestConstraintTable(t *testing.T) {
+	manager := NewSheetManager(jsonPath)
+	db := manager.FindDatabase("testdb")
+	if db == nil {
+		t.Fatalf("database %s is nil", "testdb")
+	}
+
+	table := db.FindTable(TestStructSmall{})
+	if table == nil {
+		constraint := NewConstraint()
+		constraint.UniqueColumns("Yes", "Name")
+		table = db.CreateTable(TestStructSmall{}, constraint)
+		fmt.Printf("----DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
+	} else {
+		fmt.Printf("----DB: %s Table %s[%d] found\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
+	}
+
+	tableMeta := table.Metadata()
+	fmt.Printf("----Metadata: \n%+v\n", *tableMeta)
+
+	bucket := make([]interface{}, 5)
+	bucket[0] = TestStructSmall{
+		Yes:  true,
+		Name: "AAA",
+	}
+	bucket[1] = TestStructSmall{
+		Yes:  true,
+		Name: "AAA",
+	}
+	bucket[2] = TestStructSmall{
+		Yes:  false,
+		Name: "AAA",
+	}
+	bucket[3] = TestStructSmall{
+		Yes:  true,
+		Name: "ABA",
+	}
+	bucket[4] = TestStructSmall{
+		Yes:  false,
+		Name: "scdef",
+	}
+	table.UpsertIf(bucket, true)
+
+	tableIndex := table.index
+	for i, v := range tableIndex.indices {
+		fmt.Printf("----Idx[%s] %v\n", i, v)
+	}
+
+	data, tableMeta := table.Select(-1)
+	fmt.Println("-----------------------------")
+	fmt.Printf("Table name: %s Rows: %d\n", tableMeta.Name, tableMeta.Rows)
+	fmt.Printf("      %v\n      %v\n", tableMeta.Types, tableMeta.Columns)
+	for i := range data {
+		fmt.Printf("%04d", i)
+		for j := range data[i] {
+			fmt.Printf("  %v", data[i][j])
+		}
+		fmt.Println()
+	}
+
 }

@@ -175,7 +175,9 @@ func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
 	table.metadata.Constraints = NewConstraintFromString(constraint)
 	// update index
 	// will update if constraints is valid
+	table.UpdatedMetadata()
 	table.updateIndex()
+	fmt.Println("---------Table created-----------")
 	return table
 }
 
