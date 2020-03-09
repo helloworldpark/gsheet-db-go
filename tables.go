@@ -262,7 +262,7 @@ func (table *Table) SelectAndFilter(filters map[int]Predicate) ([][]interface{},
 
 // UpsertIf Upserts given `values`. Returns true if success.
 // condition.key: column index
-func (table *Table) UpsertIf(values []interface{}, conditions ...map[int]func(interface{}) bool) bool {
+func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions ...map[int]func(interface{}) bool) bool {
 	if len(values) == 0 {
 		return false
 	}
@@ -289,67 +289,20 @@ func (table *Table) UpsertIf(values []interface{}, conditions ...map[int]func(in
 
 		for i := range values {
 			item := values[i]
-			columnwiseValues := analyseStruct(item)
-			didPass := true
-		TESTITEM:
-			for _, condition := range conditions {
-				for j, f := range condition {
-					if !f(columnwiseValues[j].cvalue) {
-						didPass = false
-						break TESTITEM
-					}
+			fmt.Println("MMMM", item)
+			testColumnValues, ok := item.([]interface{})
+			if !ok {
+				columnwiseAnalyse := analyseStruct(item)
+				for _, v := range columnwiseAnalyse {
+					testColumnValues = append(testColumnValues, v)
 				}
 			}
-			if didPass {
-				filteredValues = append(filteredValues, item)
-			}
-		}
-	}
-	if len(filteredValues) > 0 {
-		// 3행~, 쓸 수 있는만큼 쓴다
-		req := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
-		req.updateRange(metadata, values)
-		if req.Do()/100 != 2 {
-			return false
-		}
 
-		// 기록한 행 업데이트
-		req.updateRows(metadata, len(values))
-		if req.Do()/100 != 2 {
-			return false
-		}
-	}
-
-	return true
-}
-
-// UpsertArrayIf Upserts given `values`. Returns true if success.
-func (table *Table) UpsertArrayIf(values [][]interface{}, conditions ...map[int]func(interface{}) bool) bool {
-	if len(values) == 0 {
-		return false
-	}
-
-	defer func() {
-		// sync
-		table.UpdatedMetadata()
-		table.updateIndex()
-	}()
-
-	metadata := table.UpdatedMetadata()
-	if metadata == nil {
-		return false
-	}
-
-	var filteredValues [][]interface{}
-	if len(conditions) == 0 {
-		filteredValues = values
-	} else {
-		for i := range values {
 			didPass := true
 		TESTITEM:
 			for _, condition := range conditions {
 				for j, f := range condition {
-					if !f(values[i][j]) {
+					if !f(testColumnValues[j]) {
 						didPass = false
 						break TESTITEM
 					}
@@ -361,15 +314,16 @@ func (table *Table) UpsertArrayIf(values [][]interface{}, conditions ...map[int]
 		}
 	}
 	if len(filteredValues) > 0 {
-		// 3행~, 쓸 수 있는만큼 쓴다
+		// 데이터를 덧붙인다면 마지막 행부터
+		// 처음부터라면 첫 행부터
 		req := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
-		req.updateRangeWithArray(metadata, filteredValues)
+		req.updateRange(metadata, appendData, values)
 		if req.Do()/100 != 2 {
 			return false
 		}
 
 		// 기록한 행 업데이트
-		req.updateRows(metadata, len(filteredValues))
+		req.updateRows(metadata, len(values))
 		if req.Do()/100 != 2 {
 			return false
 		}
@@ -394,7 +348,7 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	}
 
 	// delete if predicate==true
-	newData := make([][]interface{}, 0)
+	newData := make([]interface{}, 0)
 	deletedIndex := make([]int64, 0)
 	for i, values := range data {
 		if deleteThis(values) {
@@ -410,7 +364,15 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	}
 
 	// update deleted data
-	table.UpsertArrayIf(newData)
+	for i := range newData {
+		v := newData[i].([]interface{})
+		fmt.Printf("%d ", i)
+		for j := range v {
+			fmt.Printf("%v ", v[j])
+		}
+		fmt.Println()
+	}
+	table.UpsertIf(newData, false)
 
 	// reorder data: batch clear
 	startRow := int64(3 + len(newData))

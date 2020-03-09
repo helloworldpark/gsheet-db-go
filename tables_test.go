@@ -247,7 +247,7 @@ func TestReadAndWriteTable(t *testing.T) {
 
 		values = append(values, meme)
 	}
-	didSuccess := table.UpsertIf(values)
+	didSuccess := table.UpsertIf(values, true)
 	if didSuccess {
 		fmt.Printf("Table %s[%d] Success Write %d Data\n", table.Name(), table.SheetID(), len(values))
 	} else {
@@ -331,15 +331,18 @@ func TestDeleteRow(t *testing.T) {
 		v2, _ := strconv.ParseInt(v, 10, 16)
 		return int16(v2) < 0
 	}
-	filter5 := func(field interface{}) bool {
-		return field.(string) == "TRUE"
-	}
+	// filter5 := func(field interface{}) bool {
+	// 	return field.(string) == "TRUE"
+	// }
 
+	tmpIdx := 1
 	predicate := func(row []interface{}) bool {
-		fmt.Println("Row ", row)
 		p1 := filter0(row[0])
-		p2 := filter5(row[5])
-		fmt.Println(row[0], p1, row[5], p2)
+		// p2 := filter5(row[5])
+		if p1 {
+			fmt.Println("Row ", tmpIdx, row)
+			tmpIdx++
+		}
 		return p1
 	}
 

@@ -10,12 +10,13 @@ import (
 	"strings"
 
 	"golang.org/x/oauth2"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/sheets/v4"
 )
 
 const dbFileStart = "database_file_"
-const tableDataStartRowIndex = 3
-const tableDataStartColumnIndex = 0
+const tableDataStartRowIndex int64 = 3
+const tableDataStartColumnIndex int64 = 0
 
 /*
  * SheetManager api
@@ -443,7 +444,7 @@ func newSpreadsheetValuesUpdateRequest(manager *SheetManager, spreadsheetID, tab
 func rangeString(metadata *TableMetadata, startRow, appendingRow int64) cellRange {
 	endRow := startRow + appendingRow
 	const startCol = tableDataStartColumnIndex
-	endCol := int64(startCol + len(metadata.Columns))
+	endCol := startCol + int64(len(metadata.Columns))
 
 	ranges := newCellRange(metadata.Name, startRow, startCol, endRow, endCol)
 	return ranges
@@ -456,7 +457,7 @@ func (r *httpUpdateValuesRequest) updateRangeWithArray(metadata *TableMetadata, 
 }
 
 // updateRange does not include end
-func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []interface{}) bool {
+func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, appendData bool, values []interface{}) bool {
 	if len(values) == 0 {
 		return false
 	}
@@ -465,11 +466,27 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, values []
 	for i := range values {
 		r.updatingValues = append(r.updatingValues, make([]interface{}, 0))
 		reflected := reflect.ValueOf(values[i])
-		for j := 0; j < len(metadata.Columns); j++ {
-			r.updatingValues[i] = append(r.updatingValues[i], reflected.FieldByName(metadata.Columns[j]).Interface())
+		if reflected.Kind() == reflect.Slice || reflected.Kind() == reflect.Array {
+			for j := 0; j < len(metadata.Columns); j++ {
+				r.updatingValues[i] = append(r.updatingValues[i], reflected.Index(j).Interface())
+			}
+		} else {
+			for j := 0; j < len(metadata.Columns); j++ {
+				r.updatingValues[i] = append(r.updatingValues[i], reflected.FieldByName(metadata.Columns[j]).Interface())
+			}
 		}
 	}
-	startRow := metadata.Rows + tableDataStartRowIndex
+	fmt.Println("updateRange ", values[0])
+	for i := range r.updatingValues {
+		for j := range r.updatingValues[i] {
+			fmt.Printf("%v ", r.updatingValues[i][j])
+		}
+		fmt.Println()
+	}
+	startRow := tableDataStartRowIndex
+	if appendData {
+		startRow += metadata.Rows
+	}
 	ranges := rangeString(metadata, startRow, int64(len(values)))
 	r.ranges = ranges.String()
 	return true
@@ -495,8 +512,30 @@ func (r *httpUpdateValuesRequest) Do() int {
 	req.IncludeValuesInResponse(true)
 	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	updatedRange, err := req.Do()
+
+	fmt.Printf("Values: %d x %d\n", len(rangeValues.Values), len(rangeValues.Values[0]))
+	for i := range rangeValues.Values {
+		v := rangeValues.Values[i][0]
+		fmt.Println(i, 0, reflect.ValueOf(v).Kind().String(), reflect.ValueOf(v).Interface())
+	}
+
 	if err != nil {
-		fmt.Println(r)
+		fmt.Println("httpUpdateValuesRequest.Do()")
+		fmt.Println(len(r.updatingValues), "x", len(r.updatingValues[0]))
+		fmt.Printf("Range: %+v\n", rangeValues.Range)
+
+		gerr, ok := err.(*googleapi.Error)
+		if ok {
+			fmt.Printf("whywhy: %s\n", gerr.Error())
+			fmt.Printf("-Header: %+v\n", gerr.Header)
+			fmt.Printf("-Body: %+v\n", gerr.Body)
+			fmt.Printf("-Code: %v\n", gerr.Code)
+			fmt.Printf("-Message: %s\n", gerr.Message)
+			for _, em := range gerr.Errors {
+				fmt.Printf("-ErrorItem Message: %v Reason: %v\n", em.Message, em.Reason)
+			}
+		}
+		fmt.Println()
 		panic(err)
 	}
 	return updatedRange.HTTPStatusCode
