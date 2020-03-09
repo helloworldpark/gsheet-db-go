@@ -29,6 +29,7 @@ func (db *Database) CreateTable(scheme interface{}, constraint ...*Constraint) *
 			panic(fmt.Sprintf("Has table with name %s", tableName))
 		}
 	}
+	// add sheet
 	request := make([]*sheets.Request, 1)
 	request[0] = &sheets.Request{}
 	request[0].AddSheet = &sheets.AddSheetRequest{}
@@ -45,11 +46,11 @@ func (db *Database) CreateTable(scheme interface{}, constraint ...*Constraint) *
 			break
 		}
 	}
-
 	// Apply requests
 	requests := db.manager.createColumnsFromStruct(newSheet, scheme, constraint...)
 	updated, _, statusCode := db.batchUpdate(requests)
 	if updated == nil {
+		fmt.Println("Create Table Status code ", statusCode)
 		return nil
 	}
 	for _, updatedSheet := range updated.Sheets() {
@@ -109,6 +110,7 @@ type Table struct {
 	database *Database
 	sheet    *sheets.Sheet
 	metadata *TableMetadata
+	index    *TableIndex
 }
 
 // TableMetadata Metadata of the table
@@ -171,12 +173,12 @@ func (table *Table) UpdatedMetadata() *TableMetadata {
 	req.updateRange(tableName, 0, 0, 3, tableCols)
 	valueRange := req.Do()
 
-	colnames := make([]string, len(table.sheet.Data[0].RowData[0].Values))
+	colnames := make([]string, len(valueRange.Values[0]))
 	for i := range colnames {
 		colnames[i] = valueRange.Values[0][i].(string)
 	}
 	// 1행
-	types := make([]reflect.Kind, len(table.sheet.Data[0].RowData[1].Values))
+	types := make([]reflect.Kind, len(valueRange.Values[1]))
 	for i := range colnames {
 		kindString := valueRange.Values[1][i].(string)
 		types[i] = primitiveStringToKind[kindString]
@@ -213,11 +215,11 @@ func (table *Table) Select(rows int64) ([][]interface{}, *TableMetadata) {
 	}
 	if metadata.Rows == 0 {
 		fmt.Println("Select: Metadata.rows is 0")
-		return nil, nil
+		return nil, metadata
 	}
 	if rows == 0 {
 		fmt.Println("Select: rows is 0")
-		return nil, nil
+		return nil, metadata
 	} else if rows == -1 {
 		rows = metadata.Rows
 	}
@@ -268,6 +270,7 @@ func (table *Table) UpsertIf(values []interface{}, conditions ...map[int]func(in
 	defer func() {
 		// sync
 		table.UpdatedMetadata()
+		table.updateIndex()
 	}()
 
 	metadata := table.UpdatedMetadata()
@@ -330,6 +333,7 @@ func (table *Table) UpsertArrayIf(values [][]interface{}, conditions ...map[int]
 	defer func() {
 		// sync
 		table.UpdatedMetadata()
+		table.updateIndex()
 	}()
 
 	metadata := table.UpdatedMetadata()
@@ -382,6 +386,7 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	defer func() {
 		// sync
 		table.UpdatedMetadata()
+		table.updateIndex()
 	}()
 	// call data
 	data, metadata := table.Select(-1)
@@ -420,11 +425,10 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	table.manager.RefreshToken()
 	req := table.manager.service.Spreadsheets.Values.Clear(table.Spreadsheet().SpreadsheetId, ranges.String(), clearRequest)
 	req.Header().Add("Authorization", "Bearer "+table.manager.token.AccessToken)
-	didClear, err := req.Do()
+	_, err := req.Do()
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Cleared: ", didClear.ClearedRange)
 
 	// subtract row counts
 	syncRowCount := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
@@ -504,6 +508,37 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 
 	requests[0].UpdateCells.Rows = data
 	return requests
+}
+
+func (table *Table) updateIndex() {
+	fmt.Println("UpdateIndex")
+	// if no index, create
+	if table.index == nil {
+		table.index = NewTableIndex()
+	}
+
+	// call data
+	data, metadata := table.Select(-1)
+	if metadata == nil {
+		panic("Metadata must not be nil when updating indices")
+	}
+
+	// build index
+	columnIndexMap := make(map[string]int64)
+	for i, c := range metadata.Columns {
+		columnIndexMap[c] = int64(i)
+	}
+	constraintIndex := make([]int64, 0)
+	if metadata.Constraints == nil {
+		for _, i := range columnIndexMap {
+			constraintIndex = append(constraintIndex, i)
+		}
+	} else {
+		for _, c := range metadata.Constraints.uniqueColumns {
+			constraintIndex = append(constraintIndex, columnIndexMap[c])
+		}
+	}
+	table.index.Build(data, constraintIndex...)
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////

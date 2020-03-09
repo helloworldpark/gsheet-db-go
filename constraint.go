@@ -1,6 +1,8 @@
 package gosheet
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 type Constraint struct {
 	primaryKey    []string
@@ -18,16 +20,34 @@ func NewConstraint() *Constraint {
 }
 
 func NewConstraintFromString(str string) *Constraint {
+	if len(str) == 0 {
+		return nil
+	}
 	constraintMap := make(map[string]interface{})
-	err := json.Unmarshal([]byte(str), constraintMap)
+	err := json.Unmarshal([]byte(str), &constraintMap)
 	if err != nil {
 		panic(err)
 	}
-	return &Constraint{
-		primaryKey:    constraintMap["primaryKey"].([]string),
-		autoIncrement: constraintMap["autoIncrement"].(bool),
-		uniqueColumns: constraintMap["uniqueColumns"].([]string),
+
+	constraint := &Constraint{}
+	if v, ok := constraintMap["primaryKey"]; ok {
+		vstring := make([]string, 0)
+		for _, str := range v.([]interface{}) {
+			vstring = append(vstring, str.(string))
+		}
+		constraint.primaryKey = vstring
 	}
+	if v, ok := constraintMap["autoIncrement"]; ok {
+		constraint.autoIncrement, ok = v.(bool)
+	}
+	if v, ok := constraintMap["uniqueColumns"]; ok {
+		vstring := make([]string, 0)
+		for _, str := range v.([]interface{}) {
+			vstring = append(vstring, str.(string))
+		}
+		constraint.uniqueColumns = vstring
+	}
+	return constraint
 }
 
 func (c *Constraint) PrimaryKey(key string, isAutoIncrement bool) *Constraint {
@@ -60,12 +80,8 @@ func (c *Constraint) UniqueColumns(columns ...string) *Constraint {
 }
 
 func (c *Constraint) ToMap() map[string]interface{} {
-	if c == nil {
-		panic("Constraiant is nil")
-	}
-
 	constraintMap := make(map[string]interface{})
-	constraintMap["primarykey"] = c.primaryKey
+	constraintMap["primaryKey"] = c.primaryKey
 	constraintMap["autoIncrement"] = c.autoIncrement
 	constraintMap["uniqueColumns"] = c.uniqueColumns
 

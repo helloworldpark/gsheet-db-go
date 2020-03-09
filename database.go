@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/sheets/v4"
@@ -132,7 +133,7 @@ func (m *Database) Sheets() []*sheets.Sheet {
 }
 
 func (m *Database) IsValidTable(sheet *sheets.Sheet) bool {
-	if sheet.Properties.Title == "Sheet1" {
+	if strings.HasPrefix(sheet.Properties.Title, "Sheet") {
 		return false
 	}
 	return true
@@ -170,10 +171,14 @@ func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
 	table.metadata = &TableMetadata{}
 	table.metadata.Columns = colnames
 
-	table.metadata.Constraints = NewConstraintFromString(constraint)
 	table.metadata.Name = sheet.Properties.Title
 	table.metadata.Rows = rows
 	table.metadata.Types = dtypes
+
+	table.metadata.Constraints = NewConstraintFromString(constraint)
+	// update index
+	// will update if constraints is valid
+	table.updateIndex()
 	return table
 }
 
