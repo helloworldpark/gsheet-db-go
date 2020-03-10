@@ -79,7 +79,6 @@ func (index *TableIndex) Hashcode(value []interface{}, columnIndices ...int64) s
 // return: bool hasIndex, []int64 indices
 func (index *TableIndex) HasIndex(value []interface{}, columnIndices ...int64) (bool, []int64) {
 	hashed := index.Hashcode(value, columnIndices...)
-	fmt.Println("Hashed ", value, ": ", hashed)
 	bucket, ok := index.indices[hashed]
 	if ok {
 		return true, bucket

@@ -290,12 +290,9 @@ TESTCONSTRAINT:
 		}
 		// primary key + constraint check
 		if metadata.Constraints != nil {
-			fmt.Println("INSERRTIGNSDLKJFDJFLK")
 			columns := metadata.Constraints.uniqueColumns
 			hasIndex, _ := table.index.HasIndex(columnValues, table.metadata.columnsToIndices(columns)...)
-			fmt.Println("Has Index? ", hasIndex)
 			if hasIndex {
-				fmt.Println("Constraint caught: ")
 				continue TESTCONSTRAINT
 			}
 		}
