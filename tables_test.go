@@ -435,5 +435,53 @@ func TestConstraintTable(t *testing.T) {
 		}
 		fmt.Println()
 	}
+}
 
+func TestInvalidSchemeValue(t *testing.T) {
+	manager := NewSheetManager(jsonPath)
+	db := manager.FindDatabase("testdb")
+	if db == nil {
+		t.Fatalf("database %s is nil", "testdb")
+	}
+
+	table := db.FindTable(TestStructSmall{})
+	if table == nil {
+		constraint := NewConstraint()
+		constraint.UniqueColumns("Yes", "Name")
+		table = db.CreateTable(TestStructSmall{}, constraint)
+		fmt.Printf("----DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
+	} else {
+		fmt.Printf("----DB: %s Table %s[%d] found\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
+	}
+
+	tableMeta := table.Metadata()
+	fmt.Printf("----Metadata: \n%+v\n", *tableMeta)
+
+	bucket := make([]interface{}, 5)
+	bucket[0] = struct {
+		floating float64
+		testing  string
+	}{
+		floating: 1.23,
+		testing:  "ssdfod",
+	}
+
+	table.UpsertIf(bucket, true)
+
+	tableIndex := table.index
+	for i, v := range tableIndex.uniqueIndex {
+		fmt.Printf("----Idx[%s] %v\n", i, v)
+	}
+
+	data, tableMeta := table.Select(-1)
+	fmt.Println("-----------------------------")
+	fmt.Printf("Table name: %s Rows: %d\n", tableMeta.Name, tableMeta.Rows)
+	fmt.Printf("      %v\n      %v\n", tableMeta.Types, tableMeta.Columns)
+	for i := range data {
+		fmt.Printf("%04d", i)
+		for j := range data[i] {
+			fmt.Printf("  %v", data[i][j])
+		}
+		fmt.Println()
+	}
 }

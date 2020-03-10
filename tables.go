@@ -277,6 +277,10 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 	if metadata == nil {
 		return false
 	}
+	if !metadata.structFitsScheme(values[0]) {
+		fmt.Println("Input does not match table's scheme")
+		return false
+	}
 
 	newValues := make([][]interface{}, 0)
 	for i := range values {
@@ -510,6 +514,30 @@ func (metadata *TableMetadata) columnsToIndices(columns []string) []int64 {
 		result[i] = metadata.ColumnMap[c]
 	}
 	return result
+}
+
+func (metadata *TableMetadata) structFitsScheme(value interface{}) bool {
+	refl := reflect.ValueOf(value)
+	switch refl.Kind() {
+	case reflect.Slice:
+		if len(metadata.Types) != refl.Len() {
+			fmt.Printf("Invalid input: column count mismatching(table: %d, struct: %d)\n", len(metadata.Types), refl.Len())
+			return false
+		}
+		// real type 찾는 거 너무 힘드니 다음에 구현한다
+	case reflect.Struct:
+		if len(metadata.Types) != refl.NumField() {
+			return false
+		}
+		for i := 0; i < refl.NumField(); i++ {
+			if refl.Field(i).Kind() != metadata.Types[i] {
+				return false
+			}
+		}
+	default:
+		panic("Cannot handle this case")
+	}
+	return true
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
