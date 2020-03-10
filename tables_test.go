@@ -124,7 +124,7 @@ func TestCreateTableWithIndex(t *testing.T) {
 	fmt.Printf("Metadata: \n%+v\n", *tableMeta)
 
 	tableIndex := table.index
-	for i, v := range tableIndex.indices {
+	for i, v := range tableIndex.uniqueIndex {
 		fmt.Printf("Idx[%s] %v\n", i, v)
 	}
 }
@@ -420,7 +420,7 @@ func TestConstraintTable(t *testing.T) {
 	table.UpsertIf(bucket, true)
 
 	tableIndex := table.index
-	for i, v := range tableIndex.indices {
+	for i, v := range tableIndex.uniqueIndex {
 		fmt.Printf("----Idx[%s] %v\n", i, v)
 	}
 

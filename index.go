@@ -6,44 +6,51 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"fmt"
-	"hash"
-	"hash/fnv"
 	"reflect"
 	"sort"
 )
 
 type TableIndex struct {
-	indices map[string][]int64 // key: hash value, value: list of index position
-	hashGen func() hash.Hash32
+	primaryIndex map[string]bool    // key: hex of value, value: list of index position
+	uniqueIndex  map[string][]int64 // key: hex of value, value: list of index position
 }
 
 func NewTableIndex() *TableIndex {
 	tableIndex := &TableIndex{}
-	tableIndex.indices = make(map[string][]int64, 0)
-	tableIndex.hashGen = fnv.New32
+	tableIndex.primaryIndex = make(map[string]bool, 0)
+	tableIndex.uniqueIndex = make(map[string][]int64, 0)
 	return tableIndex
 }
 
 // https://stackoverflow.com/questions/13582519/how-to-generate-hash-number-of-a-string-in-go
 // values: array of values which are splitted to column values
-func (index *TableIndex) Build(values [][]interface{}, columnIndices ...int64) {
-	if len(columnIndices) == 0 {
+func (index *TableIndex) Build(values [][]interface{}, metadata *TableMetadata) {
+	if metadata.Constraints == nil {
+		return
+	}
+	if len(metadata.Constraints.primaryKey) == 0 || len(metadata.Constraints.uniqueColumns) == 0 {
 		return
 	}
 
 	// clear index
-	index.indices = make(map[string][]int64)
+	index.primaryIndex = make(map[string]bool)
+	index.uniqueIndex = make(map[string][]int64)
 
 	for i, v := range values {
-		hashed := index.Hashcode(v, columnIndices...)
-		bucket, ok := index.indices[hashed]
+		primaryColumn := metadata.columnsToIndices(metadata.Constraints.primaryKey)
+		primaryKey := index.Hashcode(v, primaryColumn...)
+		index.primaryIndex[primaryKey] = true
+
+		uniqueColumns := metadata.columnsToIndices(metadata.Constraints.uniqueColumns)
+		uniqueHash := index.Hashcode(v, uniqueColumns...)
+		bucket, ok := index.uniqueIndex[uniqueHash]
 		if ok {
 			bucket = append(bucket, int64(i))
-			index.indices[hashed] = bucket
+			index.uniqueIndex[uniqueHash] = bucket
 		} else {
 			bucket = make([]int64, 0)
 			bucket = append(bucket, int64(i))
-			index.indices[hashed] = bucket
+			index.uniqueIndex[uniqueHash] = bucket
 		}
 	}
 }
@@ -79,7 +86,7 @@ func (index *TableIndex) Hashcode(value []interface{}, columnIndices ...int64) s
 // return: bool hasIndex, []int64 indices
 func (index *TableIndex) HasIndex(value []interface{}, columnIndices ...int64) (bool, []int64) {
 	hashed := index.Hashcode(value, columnIndices...)
-	bucket, ok := index.indices[hashed]
+	bucket, ok := index.uniqueIndex[hashed]
 	if ok {
 		return true, bucket
 	}

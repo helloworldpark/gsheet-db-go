@@ -9,6 +9,7 @@ type Constraint struct {
 	autoIncrement bool
 
 	uniqueColumns []string
+	tableColumns  []string
 }
 
 func NewConstraint() *Constraint {
@@ -16,6 +17,7 @@ func NewConstraint() *Constraint {
 		primaryKey:    make([]string, 0),
 		autoIncrement: false,
 		uniqueColumns: make([]string, 0),
+		tableColumns:  make([]string, 0),
 	}
 }
 
@@ -46,6 +48,13 @@ func NewConstraintFromString(str string) *Constraint {
 			vstring = append(vstring, str.(string))
 		}
 		constraint.uniqueColumns = vstring
+	}
+	if v, ok := constraintMap["tableColumns"]; ok {
+		vstring := make([]string, 0)
+		for _, str := range v.([]interface{}) {
+			vstring = append(vstring, str.(string))
+		}
+		constraint.tableColumns = vstring
 	}
 	return constraint
 }
@@ -79,7 +88,7 @@ func (c *Constraint) UniqueColumns(columns ...string) *Constraint {
 	return c
 }
 
-func (c *Constraint) ToMap() map[string]interface{} {
+func (c *Constraint) toMap() map[string]interface{} {
 	constraintMap := make(map[string]interface{})
 	constraintMap["primaryKey"] = c.primaryKey
 	constraintMap["autoIncrement"] = c.autoIncrement

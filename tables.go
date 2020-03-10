@@ -279,7 +279,6 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 	}
 
 	newValues := make([][]interface{}, 0)
-TESTCONSTRAINT:
 	for i := range values {
 		columnValues, ok := values[i].([]interface{})
 		if !ok {
@@ -289,14 +288,10 @@ TESTCONSTRAINT:
 			}
 		}
 		// primary key + constraint check
-		if metadata.Constraints != nil {
-			columns := metadata.Constraints.uniqueColumns
-			hasIndex, _ := table.index.HasIndex(columnValues, table.metadata.columnsToIndices(columns)...)
-			if hasIndex {
-				continue TESTCONSTRAINT
-			}
+		hasIndex, _ := table.hasIndexOf(columnValues)
+		if !hasIndex {
+			newValues = append(newValues, columnValues)
 		}
-		newValues = append(newValues, columnValues)
 	}
 
 	var filteredValues [][]interface{}
@@ -394,6 +389,24 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	return deletedIndex
 }
 
+func (table *Table) hasIndexOf(value []interface{}) (bool, []int64) {
+	if table.metadata.Constraints == nil {
+		return false, nil
+	}
+	// primary key
+	columns := table.metadata.Constraints.primaryKey
+	columnIndex := table.metadata.columnsToIndices(columns)
+	hasIndex, index := table.index.HasIndex(value, columnIndex...)
+	if hasIndex {
+		return true, index
+	}
+
+	// unique constraint
+	columns = table.metadata.Constraints.uniqueColumns
+	columnIndex = table.metadata.columnsToIndices(columns)
+	return table.index.HasIndex(value, columnIndex...)
+}
+
 func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstance interface{}, constraint ...*Constraint) []*sheets.Request {
 	if table == nil {
 		return nil
@@ -452,7 +465,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 	data[2].Values[1].UserEnteredValue.NumberValue = float64(len(fields))
 	if len(constraint) > 0 {
 		data[2].Values[2].UserEnteredValue = &sheets.ExtendedValue{}
-		constraintBytes, err := json.Marshal(constraint[0].ToMap())
+		constraintBytes, err := json.Marshal(constraint[0].toMap())
 		if err != nil {
 			panic(err)
 		}
@@ -481,21 +494,7 @@ func (table *Table) updateIndex() {
 	}
 
 	// build index
-	columnIndexMap := make(map[string]int64)
-	for i, c := range metadata.Columns {
-		columnIndexMap[c] = int64(i)
-	}
-	constraintIndex := make([]int64, 0)
-	if metadata.Constraints == nil {
-		for _, i := range columnIndexMap {
-			constraintIndex = append(constraintIndex, i)
-		}
-	} else {
-		for _, c := range metadata.Constraints.uniqueColumns {
-			constraintIndex = append(constraintIndex, columnIndexMap[c])
-		}
-	}
-	table.index.Build(data, constraintIndex...)
+	table.index.Build(data, metadata)
 }
 
 func (metadata *TableMetadata) columnsToIndices(columns []string) []int64 {
