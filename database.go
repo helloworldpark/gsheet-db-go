@@ -177,7 +177,6 @@ func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
 	// will update if constraints is valid
 	table.UpdatedMetadata()
 	table.updateIndex()
-	fmt.Println("---------Table created-----------")
 	return table
 }
 
@@ -459,7 +458,8 @@ func (r *httpUpdateValuesRequest) updateRangeWithArray(metadata *TableMetadata, 
 }
 
 // updateRange does not include end
-func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, appendData bool, values []interface{}) bool {
+// values: values[0]: 0th struct, values[0][4]: 4th column value of 0th struct
+func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, appendData bool, values [][]interface{}) bool {
 	if len(values) == 0 {
 		return false
 	}
@@ -467,15 +467,8 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, appendDat
 	r.updatingValues = nil
 	for i := range values {
 		r.updatingValues = append(r.updatingValues, make([]interface{}, 0))
-		reflected := reflect.ValueOf(values[i])
-		if reflected.Kind() == reflect.Slice || reflected.Kind() == reflect.Array {
-			for j := 0; j < len(metadata.Columns); j++ {
-				r.updatingValues[i] = append(r.updatingValues[i], reflected.Index(j).Interface())
-			}
-		} else {
-			for j := 0; j < len(metadata.Columns); j++ {
-				r.updatingValues[i] = append(r.updatingValues[i], reflected.FieldByName(metadata.Columns[j]).Interface())
-			}
+		for j := 0; j < len(metadata.Columns); j++ {
+			r.updatingValues[i] = append(r.updatingValues[i], values[i][j])
 		}
 	}
 

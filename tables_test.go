@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strconv"
 	"testing"
+	"time"
 )
 
 type TestStructMeme struct {
@@ -242,6 +243,7 @@ func TestReadAndWriteTable(t *testing.T) {
 	// Write to table
 	var values []interface{}
 	for i := 0; i < 10; i++ {
+		rand.Seed(time.Now().Unix())
 		meme := TestStructMeme{
 			Name1: int16(rand.Int31()),
 			Name2: rand.Int31(),

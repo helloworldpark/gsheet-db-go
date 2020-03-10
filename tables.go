@@ -278,50 +278,40 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 		return false
 	}
 
-	newValues := make([]interface{}, 0)
+	newValues := make([][]interface{}, 0)
 TESTCONSTRAINT:
 	for i := range values {
-		item := values[i]
-		testColumnValues, ok := item.([]interface{})
+		columnValues, ok := values[i].([]interface{})
 		if !ok {
-			columnwiseAnalyse := analyseStruct(item)
+			columnwiseAnalyse := analyseStruct(values[i])
 			for _, v := range columnwiseAnalyse {
-				testColumnValues = append(testColumnValues, v.cvalue)
+				columnValues = append(columnValues, v.cvalue)
 			}
 		}
-		// constraint check
+		// primary key + constraint check
 		if metadata.Constraints != nil {
 			fmt.Println("INSERRTIGNSDLKJFDJFLK")
 			columns := metadata.Constraints.uniqueColumns
-			hasIndex, _ := table.index.HasIndex(testColumnValues, table.metadata.columnsToIndices(columns)...)
+			hasIndex, _ := table.index.HasIndex(columnValues, table.metadata.columnsToIndices(columns)...)
 			fmt.Println("Has Index? ", hasIndex)
 			if hasIndex {
 				fmt.Println("Constraint caught: ")
 				continue TESTCONSTRAINT
 			}
 		}
-		newValues = append(newValues, item)
+		newValues = append(newValues, columnValues)
 	}
 
-	var filteredValues []interface{}
+	var filteredValues [][]interface{}
 	if len(conditions) == 0 {
 		filteredValues = newValues
 	} else {
 		for i := range newValues {
-			item := newValues[i]
-			testColumnValues, ok := item.([]interface{})
-			if !ok {
-				columnwiseAnalyse := analyseStruct(item)
-				for _, v := range columnwiseAnalyse {
-					testColumnValues = append(testColumnValues, v.cvalue)
-				}
-			}
-
 			didPass := true
 		TESTITEM:
 			for _, condition := range conditions {
 				for j, f := range condition {
-					if !f(testColumnValues[j]) {
+					if !f(newValues[i][j]) {
 						didPass = false
 						break TESTITEM
 					}
@@ -509,7 +499,6 @@ func (table *Table) updateIndex() {
 		}
 	}
 	table.index.Build(data, constraintIndex...)
-	fmt.Println("Index: ", table.index.indices)
 }
 
 func (metadata *TableMetadata) columnsToIndices(columns []string) []int64 {

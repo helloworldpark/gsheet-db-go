@@ -25,6 +25,7 @@ func NewTableIndex() *TableIndex {
 }
 
 // https://stackoverflow.com/questions/13582519/how-to-generate-hash-number-of-a-string-in-go
+// values: array of values which are splitted to column values
 func (index *TableIndex) Build(values [][]interface{}, columnIndices ...int64) {
 	if len(columnIndices) == 0 {
 		return
@@ -47,60 +48,36 @@ func (index *TableIndex) Build(values [][]interface{}, columnIndices ...int64) {
 	}
 }
 
-func (index *TableIndex) Hashcode(value interface{}, columnIndices ...int64) string {
+var trueOrFalse = map[bool]string{true: "TRUE", false: "FALSE"}
+
+// value: single struct splitted to column values
+func (index *TableIndex) Hashcode(value []interface{}, columnIndices ...int64) string {
 	reflectedValue := reflect.ValueOf(value)
 	testValue := ""
 	sort.Slice(columnIndices, func(i, j int) bool {
 		return columnIndices[i] < columnIndices[j]
 	})
 
-	if reflectedValue.Kind() == reflect.Slice {
-		for _, idx := range columnIndices {
-			field := reflectedValue.Index(int(idx))
-			fmt.Println("Field Kid:", field, field.Kind())
-			// 특별 예외: bool은 대문자로 변환
-			var msg string
-			if boolValue, ok := field.Interface().(bool); ok {
-				var tf string
-				if boolValue {
-					tf = "TRUE"
-				} else {
-					tf = "FALSE"
-				}
-				msg = fmt.Sprintf("%v%v", idx, tf)
-			} else {
-				msg = fmt.Sprintf("%v%v", idx, field.Interface())
-			}
-
-			testValue += msg
+	for _, idx := range columnIndices {
+		field := reflectedValue.Index(int(idx))
+		// 특별 예외: bool은 대문자로 변환
+		var msg string
+		if boolValue, ok := field.Interface().(bool); ok {
+			msg = fmt.Sprintf("%v%v", idx, trueOrFalse[boolValue])
+		} else {
+			msg = fmt.Sprintf("%v%v", idx, field.Interface())
 		}
-	} else {
-		for _, idx := range columnIndices {
-			reflectedField := reflectedValue.Field(int(idx))
-			// 특별 예외: bool은 대문자로 변환
-			var msg string
-			if reflectedField.Kind() == reflect.Bool {
-				if reflectedField.Bool() {
-					msg = fmt.Sprintf("%v%s", idx, "TRUE")
-				} else {
-					msg = fmt.Sprintf("%v%s", idx, "FALSE")
-				}
-			} else {
-				msg = fmt.Sprintf("%v%v", idx, reflectedField.Interface())
-			}
 
-			testValue += msg
-		}
+		testValue += msg
 	}
 
 	hashed := getIndexKey(testValue)
-	fmt.Println(" Hashed ", testValue, hashed)
 	return hashed
 }
 
-// value: struct
+// value: struct splitted to column values
 // return: bool hasIndex, []int64 indices
-func (index *TableIndex) HasIndex(value interface{}, columnIndices ...int64) (bool, []int64) {
+func (index *TableIndex) HasIndex(value []interface{}, columnIndices ...int64) (bool, []int64) {
 	hashed := index.Hashcode(value, columnIndices...)
 	fmt.Println("Hashed ", value, ": ", hashed)
 	bucket, ok := index.indices[hashed]
