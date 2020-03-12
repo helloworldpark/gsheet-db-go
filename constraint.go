@@ -7,14 +7,12 @@ import (
 // Constraint Describes table constraints. Only unique columns constraint supported.
 type Constraint struct {
 	uniqueColumns []string
-	tableColumns  []string
 }
 
 // NewConstraint Returns pointer to new empty constraint.
 func NewConstraint() *Constraint {
 	return &Constraint{
 		uniqueColumns: make([]string, 0),
-		tableColumns:  make([]string, 0),
 	}
 }
 
@@ -36,13 +34,6 @@ func newConstraintFromString(str string) *Constraint {
 			vstring = append(vstring, str.(string))
 		}
 		constraint.uniqueColumns = vstring
-	}
-	if v, ok := constraintMap["tableColumns"]; ok {
-		vstring := make([]string, 0)
-		for _, str := range v.([]interface{}) {
-			vstring = append(vstring, str.(string))
-		}
-		constraint.tableColumns = vstring
 	}
 	return constraint
 }
