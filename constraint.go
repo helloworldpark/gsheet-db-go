@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 )
 
+// Constraint Describes table constraints. Only unique columns constraint supported.
 type Constraint struct {
 	uniqueColumns []string
 	tableColumns  []string
 }
 
+// NewConstraint Returns pointer to new empty constraint.
 func NewConstraint() *Constraint {
 	return &Constraint{
 		uniqueColumns: make([]string, 0),
@@ -16,7 +18,8 @@ func NewConstraint() *Constraint {
 	}
 }
 
-func NewConstraintFromString(str string) *Constraint {
+// newConstraintFromString Returns pointer to restored constraint from JSON string.
+func newConstraintFromString(str string) *Constraint {
 	if len(str) == 0 {
 		return nil
 	}
@@ -44,7 +47,8 @@ func NewConstraintFromString(str string) *Constraint {
 	return constraint
 }
 
-func (c *Constraint) UniqueColumns(columns ...string) *Constraint {
+// SetUniqueColumns Sets unique columns to table
+func (c *Constraint) SetUniqueColumns(columns ...string) *Constraint {
 	// Check if valid
 	if len(columns) > 0 && len(columns) == len(c.uniqueColumns) {
 		allSame := true

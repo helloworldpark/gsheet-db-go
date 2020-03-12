@@ -172,7 +172,7 @@ func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
 	table.metadata.Rows = rows
 	table.metadata.Types = dtypes
 
-	table.metadata.Constraints = NewConstraintFromString(constraint)
+	table.metadata.Constraints = newConstraintFromString(constraint)
 	// update index
 	// will update if constraints is valid
 	table.UpdatedMetadata()

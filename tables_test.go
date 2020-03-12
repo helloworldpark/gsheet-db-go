@@ -116,7 +116,7 @@ func TestCreateTableWithIndex(t *testing.T) {
 	}
 
 	constraint := NewConstraint()
-	constraint.UniqueColumns("Name1", "Name2")
+	constraint.SetUniqueColumns("Name1", "Name2")
 	table := db.CreateTable(TestStructMeme{}, constraint)
 	fmt.Printf("DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
 
@@ -386,7 +386,7 @@ func TestConstraintTable(t *testing.T) {
 	table := db.FindTable(TestStructSmall{})
 	if table == nil {
 		constraint := NewConstraint()
-		constraint.UniqueColumns("Yes", "Name")
+		constraint.SetUniqueColumns("Yes", "Name")
 		table = db.CreateTable(TestStructSmall{}, constraint)
 		fmt.Printf("----DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
 	} else {
@@ -447,7 +447,7 @@ func TestInvalidSchemeValue(t *testing.T) {
 	table := db.FindTable(TestStructSmall{})
 	if table == nil {
 		constraint := NewConstraint()
-		constraint.UniqueColumns("Yes", "Name")
+		constraint.SetUniqueColumns("Yes", "Name")
 		table = db.CreateTable(TestStructSmall{}, constraint)
 		fmt.Printf("----DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
 	} else {

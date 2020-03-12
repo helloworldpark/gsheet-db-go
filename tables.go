@@ -199,7 +199,7 @@ func (table *Table) UpdatedMetadata() *TableMetadata {
 		Columns:     colnames,
 		Types:       types,
 		Rows:        rows,
-		Constraints: NewConstraintFromString(constraint),
+		Constraints: newConstraintFromString(constraint),
 	}
 	table.metadata = metadata
 	return metadata
