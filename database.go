@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"golang.org/x/oauth2"
-	"google.golang.org/api/googleapi"
 	"google.golang.org/api/sheets/v4"
 )
 
@@ -46,8 +45,8 @@ func NewSheetManager(jsonPath string) *SheetManager {
 	return m
 }
 
-// RefreshToken refreshes token if not valid
-func (m *SheetManager) RefreshToken() {
+// refreshToken refreshes token if not valid
+func (m *SheetManager) refreshToken() {
 	if !m.token.Valid() {
 		token := createJWTToken(m.credentialJSON)
 		m.token = token
@@ -129,7 +128,7 @@ func (m *Database) Sheets() []*sheets.Sheet {
 	return m.spreadsheet.Sheets
 }
 
-func (m *Database) IsValidTable(sheet *sheets.Sheet) bool {
+func (m *Database) isValidTable(sheet *sheets.Sheet) bool {
 	if strings.HasPrefix(sheet.Properties.Title, "Sheet") {
 		return false
 	}
@@ -147,8 +146,14 @@ func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
 	}
 
 	// todo: error check
-	rows, _ := strconv.ParseInt(valueRange.Values[2][0].(string), 10, 64)
-	cols, _ := strconv.ParseInt(valueRange.Values[2][1].(string), 10, 64)
+	rows, err := strconv.ParseInt(valueRange.Values[2][0].(string), 10, 64)
+	if err != nil {
+		panic(err)
+	}
+	cols, err := strconv.ParseInt(valueRange.Values[2][1].(string), 10, 64)
+	if err != nil {
+		panic(err)
+	}
 	constraint := ""
 	if len(valueRange.Values[2]) > 2 {
 		constraint = valueRange.Values[2][2].(string)
@@ -165,17 +170,17 @@ func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
 	table.sheet = sheet
 	table.database = m
 	table.manager = m.manager
-	table.metadata = &TableMetadata{}
-	table.metadata.Columns = colnames
+	table.scheme = &TableScheme{}
+	table.scheme.Columns = colnames
 
-	table.metadata.Name = sheet.Properties.Title
-	table.metadata.Rows = rows
-	table.metadata.Types = dtypes
+	table.scheme.Name = sheet.Properties.Title
+	table.scheme.Rows = rows
+	table.scheme.Types = dtypes
 
-	table.metadata.Constraints = newConstraintFromString(constraint)
+	table.scheme.Constraints = newConstraintFromString(constraint)
 	// update index
 	// will update if constraints is valid
-	table.UpdatedMetadata()
+	table.updatedHeader()
 	table.updateIndex()
 	return table
 }
@@ -314,7 +319,7 @@ func (r *httpURLRequest) AddQuery(key, value string) *httpURLRequest {
 }
 
 func (r *httpURLRequest) Do() *http.Response {
-	r.manager.RefreshToken()
+	r.manager.refreshToken()
 	r.req.Header.Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	resp, err := r.manager.client.Do(r.req)
 	if err != nil {
@@ -349,7 +354,7 @@ func (r *httpSpreadsheetCreateRequest) Header() http.Header {
 }
 
 func (r *httpSpreadsheetCreateRequest) Do() *sheets.Spreadsheet {
-	r.manager.RefreshToken()
+	r.manager.refreshToken()
 	r.req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	resp, err := r.req.Do()
 	if err != nil {
@@ -383,7 +388,7 @@ func (r *httpBatchUpdateRequest) updateRequest(req *sheets.Request) {
 }
 
 func (r *httpBatchUpdateRequest) Do() (*sheets.Spreadsheet, []*sheets.Response, int) {
-	r.manager.RefreshToken()
+	r.manager.refreshToken()
 	req := r.manager.service.Spreadsheets.BatchUpdate(r.spreadsheetID, r.batchRequest)
 	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	resp, err := req.Do()
@@ -410,13 +415,13 @@ func newSpreadsheetValuesRequest(manager *SheetManager, spreadsheetID, tableName
 // updateRange does not include end
 func (r *httpValueRangeRequest) updateRange(tablename string, startRow, startCol, endRow, endCol int64) bool {
 	ranges := newCellRange(tablename, startRow, startCol, endRow, endCol)
-	r.manager.RefreshToken()
+	r.manager.refreshToken()
 	r.ranges = ranges.String()
 	return true
 }
 
 func (r *httpValueRangeRequest) Do() *sheets.ValueRange {
-	r.manager.RefreshToken()
+	r.manager.refreshToken()
 	req := r.manager.service.Spreadsheets.Values.Get(r.spreadsheetID, r.ranges)
 	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	valueRange, err := req.Do()
@@ -442,7 +447,7 @@ func newSpreadsheetValuesUpdateRequest(manager *SheetManager, spreadsheetID, tab
 }
 
 // rangeString does not include end
-func rangeString(metadata *TableMetadata, startRow, appendingRow int64) cellRange {
+func rangeString(metadata *TableScheme, startRow, appendingRow int64) cellRange {
 	endRow := startRow + appendingRow
 	const startCol = tableDataStartColumnIndex
 	endCol := startCol + int64(len(metadata.Columns))
@@ -451,7 +456,7 @@ func rangeString(metadata *TableMetadata, startRow, appendingRow int64) cellRang
 	return ranges
 }
 
-func (r *httpUpdateValuesRequest) updateRangeWithArray(metadata *TableMetadata, values [][]interface{}) {
+func (r *httpUpdateValuesRequest) updateRangeWithArray(metadata *TableScheme, values [][]interface{}) {
 	r.updatingValues = values
 	startRow := metadata.Rows + tableDataStartColumnIndex
 	r.ranges = rangeString(metadata, startRow, int64(len(values))).String()
@@ -459,7 +464,7 @@ func (r *httpUpdateValuesRequest) updateRangeWithArray(metadata *TableMetadata, 
 
 // updateRange does not include end
 // values: values[0]: 0th struct, values[0][4]: 4th column value of 0th struct
-func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, appendData bool, values [][]interface{}) bool {
+func (r *httpUpdateValuesRequest) updateRange(metadata *TableScheme, appendData bool, values [][]interface{}) bool {
 	if len(values) == 0 {
 		return false
 	}
@@ -481,7 +486,7 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableMetadata, appendDat
 	return true
 }
 
-func (r *httpUpdateValuesRequest) updateRows(metadata *TableMetadata, adding int) bool {
+func (r *httpUpdateValuesRequest) updateRows(metadata *TableScheme, adding int) bool {
 	unpackedValues := make([][]interface{}, 1)
 	unpackedValues[0] = make([]interface{}, 1)
 	unpackedValues[0][0] = metadata.Rows + int64(adding)
@@ -492,7 +497,7 @@ func (r *httpUpdateValuesRequest) updateRows(metadata *TableMetadata, adding int
 }
 
 func (r *httpUpdateValuesRequest) Do() int {
-	r.manager.RefreshToken()
+	r.manager.refreshToken()
 	rangeValues := &sheets.ValueRange{}
 	rangeValues.Range = r.ranges
 	rangeValues.Values = r.updatingValues
@@ -502,29 +507,18 @@ func (r *httpUpdateValuesRequest) Do() int {
 	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	updatedRange, err := req.Do()
 
-	fmt.Printf("Values: %d x %d\n", len(rangeValues.Values), len(rangeValues.Values[0]))
 	for i := range rangeValues.Values {
 		v := rangeValues.Values[i][0]
 		fmt.Println(i, 0, reflect.ValueOf(v).Kind().String(), reflect.ValueOf(v).Interface())
 	}
 
 	if err != nil {
-		fmt.Println("httpUpdateValuesRequest.Do()")
-		fmt.Println(len(r.updatingValues), "x", len(r.updatingValues[0]))
-		fmt.Printf("Range: %+v\n", rangeValues.Range)
-
-		gerr, ok := err.(*googleapi.Error)
-		if ok {
-			fmt.Printf("whywhy: %s\n", gerr.Error())
-			fmt.Printf("-Header: %+v\n", gerr.Header)
-			fmt.Printf("-Body: %+v\n", gerr.Body)
-			fmt.Printf("-Code: %v\n", gerr.Code)
-			fmt.Printf("-Message: %s\n", gerr.Message)
-			for _, em := range gerr.Errors {
-				fmt.Printf("-ErrorItem Message: %v Reason: %v\n", em.Message, em.Reason)
-			}
-		}
-		fmt.Println()
+		// gerr, ok := err.(*googleapi.Error)
+		// if ok {
+		// 	for _, em := range gerr.Errors {
+		// 		fmt.Printf("-ErrorItem Message: %v Reason: %v\n", em.Message, em.Reason)
+		// 	}
+		// }
 		panic(err)
 	}
 	return updatedRange.HTTPStatusCode
@@ -545,7 +539,7 @@ func newClearValuesRequest(manager *SheetManager, spreadsheetID string, ranges c
 }
 
 func (r *clearValuesRequest) Do() int {
-	r.manager.RefreshToken()
+	r.manager.refreshToken()
 	clearRequest := &sheets.ClearValuesRequest{}
 	req := r.manager.service.Spreadsheets.Values.Clear(r.spreadsheetID, r.ranges.String(), clearRequest)
 	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)

@@ -22,7 +22,7 @@ func newTableIndex() *tableIndex {
 
 // https://stackoverflow.com/questions/13582519/how-to-generate-hash-number-of-a-string-in-go
 // values: array of values which are splitted to column values
-func (index *tableIndex) build(values [][]interface{}, metadata *TableMetadata) {
+func (index *tableIndex) build(values [][]interface{}, metadata *TableScheme) {
 	if metadata.Constraints == nil {
 		return
 	}

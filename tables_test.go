@@ -118,9 +118,9 @@ func TestCreateTableWithIndex(t *testing.T) {
 	constraint := NewConstraint()
 	constraint.SetUniqueColumns("Name1", "Name2")
 	table := db.CreateTable(TestStructMeme{}, constraint)
-	fmt.Printf("DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
+	fmt.Printf("DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.sheetID())
 
-	tableMeta := table.Metadata()
+	tableMeta := table.header()
 	fmt.Printf("Metadata: \n%+v\n", *tableMeta)
 
 	for i, v := range table.index.uniqueIndex {
@@ -195,7 +195,7 @@ func TestResetTable(t *testing.T) {
 	manager.SynchronizeFromGoogle(database)
 
 	table = database.CreateTable(TestStructMeme{})
-	fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
+	fmt.Printf("Table %s[%d] created\n", table.Name(), table.sheetID())
 }
 
 func TestReadTable(t *testing.T) {
@@ -209,9 +209,9 @@ func TestReadTable(t *testing.T) {
 	table := db.FindTable(TestStructMeme{})
 	if table == nil {
 		table = db.CreateTable(TestStructMeme{})
-		fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
+		fmt.Printf("Table %s[%d] created\n", table.Name(), table.sheetID())
 	} else {
-		fmt.Printf("Table %s[%d] found\n", table.Name(), table.SheetID())
+		fmt.Printf("Table %s[%d] found\n", table.Name(), table.sheetID())
 	}
 
 	tableValue, _ := table.Select(-1)
@@ -234,9 +234,9 @@ func TestReadAndWriteTable(t *testing.T) {
 	table := db.FindTable(TestStructMeme{})
 	if table == nil {
 		table = db.CreateTable(TestStructMeme{})
-		fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
+		fmt.Printf("Table %s[%d] created\n", table.Name(), table.sheetID())
 	} else {
-		fmt.Printf("Table %s[%d] found\n", table.Name(), table.SheetID())
+		fmt.Printf("Table %s[%d] found\n", table.Name(), table.sheetID())
 	}
 
 	// Write to table
@@ -262,12 +262,12 @@ func TestReadAndWriteTable(t *testing.T) {
 	}
 	didSuccess := table.UpsertIf(values, true)
 	if didSuccess {
-		fmt.Printf("Table %s[%d] Success Write %d Data\n", table.Name(), table.SheetID(), len(values))
+		fmt.Printf("Table %s[%d] Success Write %d Data\n", table.Name(), table.sheetID(), len(values))
 	} else {
-		fmt.Printf("Table %s[%d] Failed  Write %d Data\n", table.Name(), table.SheetID(), len(values))
+		fmt.Printf("Table %s[%d] Failed  Write %d Data\n", table.Name(), table.sheetID(), len(values))
 	}
 
-	tableMeta := table.Metadata()
+	tableMeta := table.header()
 	fmt.Printf("Metadata: %+v\n", *tableMeta)
 
 	tableValue, _ := table.Select(-1)
@@ -290,9 +290,9 @@ func TestReadTableWithFilter(t *testing.T) {
 	table := db.FindTable(TestStructMeme{})
 	if table == nil {
 		table = db.CreateTable(TestStructMeme{})
-		fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
+		fmt.Printf("Table %s[%d] created\n", table.Name(), table.sheetID())
 	} else {
-		fmt.Printf("Table %s[%d] found\n", table.Name(), table.SheetID())
+		fmt.Printf("Table %s[%d] found\n", table.Name(), table.sheetID())
 	}
 
 	filter := func(field interface{}) bool {
@@ -333,9 +333,9 @@ func TestDeleteRow(t *testing.T) {
 	table := db.FindTable(TestStructMeme{})
 	if table == nil {
 		table = db.CreateTable(TestStructMeme{})
-		fmt.Printf("Table %s[%d] created\n", table.Name(), table.SheetID())
+		fmt.Printf("Table %s[%d] created\n", table.Name(), table.sheetID())
 	} else {
-		fmt.Printf("Table %s[%d] found\n", table.Name(), table.SheetID())
+		fmt.Printf("Table %s[%d] found\n", table.Name(), table.sheetID())
 	}
 	fmt.Println("------2")
 
@@ -387,12 +387,12 @@ func TestConstraintTable(t *testing.T) {
 		constraint := NewConstraint()
 		constraint.SetUniqueColumns("Yes", "Name")
 		table = db.CreateTable(TestStructSmall{}, constraint)
-		fmt.Printf("----DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
+		fmt.Printf("----DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.sheetID())
 	} else {
-		fmt.Printf("----DB: %s Table %s[%d] found\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
+		fmt.Printf("----DB: %s Table %s[%d] found\n", db.spreadsheet.SpreadsheetId, table.Name(), table.sheetID())
 	}
 
-	tableMeta := table.Metadata()
+	tableMeta := table.header()
 	fmt.Printf("----Metadata: \n%+v\n", *tableMeta)
 
 	bucket := make([]interface{}, 5)
@@ -447,12 +447,12 @@ func TestInvalidSchemeValue(t *testing.T) {
 		constraint := NewConstraint()
 		constraint.SetUniqueColumns("Yes", "Name")
 		table = db.CreateTable(TestStructSmall{}, constraint)
-		fmt.Printf("----DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
+		fmt.Printf("----DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.sheetID())
 	} else {
-		fmt.Printf("----DB: %s Table %s[%d] found\n", db.spreadsheet.SpreadsheetId, table.Name(), table.SheetID())
+		fmt.Printf("----DB: %s Table %s[%d] found\n", db.spreadsheet.SpreadsheetId, table.Name(), table.sheetID())
 	}
 
-	tableMeta := table.Metadata()
+	tableMeta := table.header()
 	fmt.Printf("----Metadata: \n%+v\n", *tableMeta)
 
 	bucket := make([]interface{}, 5)

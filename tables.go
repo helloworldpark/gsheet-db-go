@@ -83,7 +83,7 @@ func (db *Database) ListTables() []*Table {
 	sheets := db.Sheets()
 	tables := make([]*Table, 0)
 	for i := range sheets {
-		if !db.IsValidTable(sheets[i]) {
+		if !db.isValidTable(sheets[i]) {
 			continue
 		}
 		newTable := db.NewTableFromSheet(sheets[i])
@@ -108,12 +108,12 @@ type Table struct {
 	manager  *SheetManager
 	database *Database
 	sheet    *sheets.Sheet
-	metadata *TableMetadata
+	scheme   *TableScheme
 	index    *tableIndex
 }
 
-// TableMetadata Metadata of the table
-type TableMetadata struct {
+// TableScheme Metadata of the table
+type TableScheme struct {
 	Name        string
 	Columns     []string
 	ColumnMap   map[string]int64
@@ -128,8 +128,8 @@ type Predicate func(interface{}) bool
 // ArrayPredicate Check if the given interface fits the condition
 type ArrayPredicate func([]interface{}) bool
 
-// SheetID alias of sheet id
-func (table *Table) SheetID() int64 {
+// sheetID alias of sheet id
+func (table *Table) sheetID() int64 {
 	return table.sheet.Properties.SheetId
 }
 
@@ -138,8 +138,8 @@ func (table *Table) Name() string {
 	return table.sheet.Properties.Title
 }
 
-// Spreadsheet spreadsheet holding this table
-func (table *Table) Spreadsheet() *sheets.Spreadsheet {
+// spreadsheet spreadsheet holding this table
+func (table *Table) spreadsheet() *sheets.Spreadsheet {
 	return table.database.Spreadsheet()
 }
 
@@ -150,26 +150,26 @@ func (table *Table) Drop() bool {
 	request := make([]*sheets.Request, 1)
 	request[0] = &sheets.Request{}
 	request[0].DeleteSheet = &sheets.DeleteSheetRequest{}
-	request[0].DeleteSheet.SheetId = table.SheetID()
+	request[0].DeleteSheet.SheetId = table.sheetID()
 	resp, _, _ := table.database.batchUpdate(request)
 	return resp != nil
 }
 
-// Metadata Metadata of the table
-func (table *Table) Metadata() *TableMetadata {
-	return table.metadata
+// header Metadata of the table
+func (table *Table) header() *TableScheme {
+	return table.scheme
 }
 
-// UpdatedMetadata Reads table's metadata from the server and sync
-func (table *Table) UpdatedMetadata() *TableMetadata {
+// updatedHeader Reads table's metadata from the server and sync
+func (table *Table) updatedHeader() *TableScheme {
 	// sync
 	table.manager.SynchronizeFromGoogle(table.database)
 	tableName := table.Name()
-	tableCols := int64(len(table.Metadata().Columns))
+	tableCols := int64(len(table.header().Columns))
 
 	// 0행~2행, 모든 열을 읽는다
 	// 0행
-	req := newSpreadsheetValuesRequest(table.manager, table.Spreadsheet().SpreadsheetId, tableName)
+	req := newSpreadsheetValuesRequest(table.manager, table.spreadsheet().SpreadsheetId, tableName)
 	req.updateRange(tableName, 0, 0, 3, tableCols)
 	valueRange := req.Do()
 
@@ -194,21 +194,21 @@ func (table *Table) UpdatedMetadata() *TableMetadata {
 	if len(valueRange.Values[2]) >= 3 {
 		constraint = valueRange.Values[2][2].(string)
 	}
-	metadata := &TableMetadata{
+	metadata := &TableScheme{
 		Name:        tableName,
 		Columns:     colnames,
 		Types:       types,
 		Rows:        rows,
 		Constraints: newConstraintFromString(constraint),
 	}
-	table.metadata = metadata
+	table.scheme = metadata
 	return metadata
 }
 
 // Select Selects all the rows from the table
-func (table *Table) Select(rows int64) ([][]interface{}, *TableMetadata) {
+func (table *Table) Select(rows int64) ([][]interface{}, *TableScheme) {
 	// sync
-	metadata := table.UpdatedMetadata()
+	metadata := table.updatedHeader()
 	if metadata == nil {
 		fmt.Println("Select: Metadata is nil")
 		return nil, nil
@@ -225,7 +225,7 @@ func (table *Table) Select(rows int64) ([][]interface{}, *TableMetadata) {
 	}
 
 	// 3행~, 모든 열을 읽는다
-	req := newSpreadsheetValuesRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
+	req := newSpreadsheetValuesRequest(table.manager, table.spreadsheet().SpreadsheetId, metadata.Name)
 	req.updateRange(metadata.Name, 3, 0, 3+rows, int64(len(metadata.Columns)))
 	valueRange := req.Do()
 
@@ -235,9 +235,9 @@ func (table *Table) Select(rows int64) ([][]interface{}, *TableMetadata) {
 // SelectAndFilter Select rows satisfying filter
 // filters.key: int, column index
 // filters.value: Predicate, whether to select or not
-func (table *Table) SelectAndFilter(filters map[int]Predicate) ([][]interface{}, *TableMetadata) {
+func (table *Table) SelectAndFilter(filters map[int]Predicate) ([][]interface{}, *TableScheme) {
 	fullData, _ := table.Select(-1)
-	metadata := table.Metadata()
+	metadata := table.header()
 	if len(filters) == 0 {
 		return fullData, metadata
 	}
@@ -262,22 +262,22 @@ func (table *Table) SelectAndFilter(filters map[int]Predicate) ([][]interface{},
 
 // UpsertIf Upserts given `values`. Returns true if success.
 // condition.key: column index
-func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions ...map[int]func(interface{}) bool) bool {
+func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions ...map[int]Predicate) bool {
 	if len(values) == 0 {
 		return false
 	}
 
 	defer func() {
 		// sync
-		table.UpdatedMetadata()
+		table.updatedHeader()
 		table.updateIndex()
 	}()
 
-	metadata := table.UpdatedMetadata()
+	metadata := table.updatedHeader()
 	if metadata == nil {
 		return false
 	}
-	if !metadata.structFitsScheme(values[0]) {
+	if !metadata.fitsScheme(values[0]) {
 		fmt.Println("Input does not match table's scheme")
 		return false
 	}
@@ -321,7 +321,7 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 	if len(filteredValues) > 0 {
 		// 데이터를 덧붙인다면 마지막 행부터
 		// 처음부터라면 첫 행부터
-		req := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
+		req := newSpreadsheetValuesUpdateRequest(table.manager, table.spreadsheet().SpreadsheetId, metadata.Name)
 		req.updateRange(metadata, appendData, newValues)
 		if req.Do()/100 != 2 {
 			return false
@@ -343,7 +343,7 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	defer func() {
 		// sync
-		table.UpdatedMetadata()
+		table.updatedHeader()
 		table.updateIndex()
 	}()
 	// call data
@@ -377,13 +377,13 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	endRow := int64(3 + len(data))
 	endCol := int64(len(metadata.Columns))
 	ranges := newCellRange(metadata.Name, startRow, startCol, endRow, endCol)
-	clearRequest := newClearValuesRequest(table.manager, table.Spreadsheet().SpreadsheetId, ranges)
+	clearRequest := newClearValuesRequest(table.manager, table.spreadsheet().SpreadsheetId, ranges)
 	if clearRequest.Do()/100 != 2 {
 		panic("Cannot clear old data")
 	}
 
 	// subtract row counts
-	syncRowCount := newSpreadsheetValuesUpdateRequest(table.manager, table.Spreadsheet().SpreadsheetId, metadata.Name)
+	syncRowCount := newSpreadsheetValuesUpdateRequest(table.manager, table.spreadsheet().SpreadsheetId, metadata.Name)
 	syncRowCount.updateRows(metadata, -len(deletedIndex))
 	if syncRowCount.Do()/100 != 2 {
 		panic("Cannot update row")
@@ -393,14 +393,15 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	return deletedIndex
 }
 
+// value: a struct splitted with columns
 func (table *Table) hasIndexOf(value []interface{}) (bool, []int64) {
-	if table.metadata.Constraints == nil {
+	if table.scheme.Constraints == nil {
 		return false, nil
 	}
 
 	// unique constraint
-	columns := table.metadata.Constraints.uniqueColumns
-	columnIndex := table.metadata.columnsToIndices(columns)
+	columns := table.scheme.Constraints.uniqueColumns
+	columnIndex := table.scheme.columnsToIndices(columns)
 	return table.index.hasIndex(value, columnIndex...)
 }
 
@@ -475,7 +476,7 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 
 func (table *Table) updateIndex() {
 	// if no constraint, no index update
-	if table.Metadata().Constraints == nil {
+	if table.header().Constraints == nil {
 		fmt.Println("No constraint to create or maintain index")
 		return
 	}
@@ -494,7 +495,7 @@ func (table *Table) updateIndex() {
 	table.index.build(data, metadata)
 }
 
-func (metadata *TableMetadata) columnsToIndices(columns []string) []int64 {
+func (metadata *TableScheme) columnsToIndices(columns []string) []int64 {
 	if metadata.ColumnMap == nil {
 		tmp := make(map[string]int64)
 		for i, c := range metadata.Columns {
@@ -509,7 +510,7 @@ func (metadata *TableMetadata) columnsToIndices(columns []string) []int64 {
 	return result
 }
 
-func (metadata *TableMetadata) structFitsScheme(value interface{}) bool {
+func (metadata *TableScheme) fitsScheme(value interface{}) bool {
 	refl := reflect.ValueOf(value)
 	switch refl.Kind() {
 	case reflect.Slice:
