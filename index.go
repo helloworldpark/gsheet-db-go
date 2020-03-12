@@ -1,9 +1,7 @@
 package gosheet
 
 import (
-	"bytes"
 	"crypto/sha256"
-	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"reflect"
@@ -92,15 +90,4 @@ func (index *tableIndex) hasIndex(value []interface{}, columnIndices ...int64) (
 func getIndexKey(str string) string {
 	k := sha256.Sum256([]byte(str))
 	return hex.EncodeToString(k[:])
-}
-
-// https://gist.github.com/miguelmota/5bfa2b6ab88f439fe0da0bfb1faca763
-func bytesFromInterface(key interface{}) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(key)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }

@@ -12,7 +12,7 @@ import (
 
 var scope = []string{drive.DriveScope, drive.DriveFileScope, sheets.SpreadsheetsScope}
 
-func CreateJWTToken(jsonPath string) *oauth2.Token {
+func createJWTToken(jsonPath string) *oauth2.Token {
 	cred, err := google.FindDefaultCredentials(context.Background(), scope...)
 	if err != nil {
 		panic(err)

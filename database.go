@@ -35,7 +35,7 @@ type SheetManager struct {
 func NewSheetManager(jsonPath string) *SheetManager {
 	client := http.DefaultClient
 	service, _ := sheets.New(client)
-	token := CreateJWTToken(jsonPath)
+	token := createJWTToken(jsonPath)
 
 	m := &SheetManager{
 		client:         client,
@@ -49,7 +49,7 @@ func NewSheetManager(jsonPath string) *SheetManager {
 // RefreshToken refreshes token if not valid
 func (m *SheetManager) RefreshToken() {
 	if !m.token.Valid() {
-		token := CreateJWTToken(m.credentialJSON)
+		token := createJWTToken(m.credentialJSON)
 		m.token = token
 	}
 	return

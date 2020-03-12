@@ -13,7 +13,7 @@ const jsonPath = "/Users/shp/Documents/projects/ticklemeta-203110-709122f3e3af.j
 func TestJWT(t *testing.T) {
 	// envKey := "GOOGLE_APPLICATION_CREDENTIALS"
 	// jsonPath := os.Getenv(envKey)
-	token := CreateJWTToken(jsonPath)
+	token := createJWTToken(jsonPath)
 	fmt.Printf("access token: %s\n", token.AccessToken)
 	fmt.Printf("expires at: %v\n", token.Expiry)
 
