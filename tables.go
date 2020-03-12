@@ -140,71 +140,6 @@ func (table *Table) Drop() bool {
 	return resp != nil
 }
 
-// Name name of the table
-func (table *Table) Name() string {
-	return table.sheet.Properties.Title
-}
-
-// sheetID alias of sheet id
-func (table *Table) sheetID() int64 {
-	return table.sheet.Properties.SheetId
-}
-
-// spreadsheet spreadsheet holding this table
-func (table *Table) spreadsheet() *sheets.Spreadsheet {
-	return table.database.Spreadsheet()
-}
-
-// header Metadata of the table
-func (table *Table) header() *TableScheme {
-	return table.scheme
-}
-
-// updatedHeader Reads table's metadata from the server and sync
-func (table *Table) updatedHeader() *TableScheme {
-	// sync
-	table.manager.SynchronizeFromGoogle(table.database)
-	tableName := table.Name()
-	tableCols := int64(len(table.header().Columns))
-
-	// 0행~2행, 모든 열을 읽는다
-	// 0행
-	req := newSpreadsheetValuesRequest(table.manager, table.spreadsheet().SpreadsheetId, tableName)
-	req.updateRange(tableName, 0, 0, 3, tableCols)
-	valueRange := req.Do()
-
-	colnames := make([]string, len(valueRange.Values[0]))
-	for i := range colnames {
-		colnames[i] = valueRange.Values[0][i].(string)
-	}
-	// 1행
-	types := make([]reflect.Kind, len(valueRange.Values[1]))
-	for i := range colnames {
-		kindString := valueRange.Values[1][i].(string)
-		types[i] = primitiveStringToKind[kindString]
-	}
-	// 2행
-	rowsString, ok := valueRange.Values[2][0].(string)
-	var rows int64
-	if ok {
-		rows, _ = strconv.ParseInt(rowsString, 10, 64)
-	}
-
-	var constraint = ""
-	if len(valueRange.Values[2]) >= 3 {
-		constraint = valueRange.Values[2][2].(string)
-	}
-	metadata := &TableScheme{
-		Name:        tableName,
-		Columns:     colnames,
-		Types:       types,
-		Rows:        rows,
-		Constraints: newConstraintFromString(constraint),
-	}
-	table.scheme = metadata
-	return metadata
-}
-
 // Select Selects all the rows from the table
 func (table *Table) Select(rows int64) ([][]interface{}, *TableScheme) {
 	// sync
@@ -391,6 +326,71 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 
 	// return index
 	return deletedIndex
+}
+
+// Name name of the table
+func (table *Table) Name() string {
+	return table.sheet.Properties.Title
+}
+
+// sheetID alias of sheet id
+func (table *Table) sheetID() int64 {
+	return table.sheet.Properties.SheetId
+}
+
+// spreadsheet spreadsheet holding this table
+func (table *Table) spreadsheet() *sheets.Spreadsheet {
+	return table.database.Spreadsheet()
+}
+
+// header Metadata of the table
+func (table *Table) header() *TableScheme {
+	return table.scheme
+}
+
+// updatedHeader Reads table's metadata from the server and sync
+func (table *Table) updatedHeader() *TableScheme {
+	// sync
+	table.manager.SynchronizeFromGoogle(table.database)
+	tableName := table.Name()
+	tableCols := int64(len(table.header().Columns))
+
+	// 0행~2행, 모든 열을 읽는다
+	// 0행
+	req := newSpreadsheetValuesRequest(table.manager, table.spreadsheet().SpreadsheetId, tableName)
+	req.updateRange(tableName, 0, 0, 3, tableCols)
+	valueRange := req.Do()
+
+	colnames := make([]string, len(valueRange.Values[0]))
+	for i := range colnames {
+		colnames[i] = valueRange.Values[0][i].(string)
+	}
+	// 1행
+	types := make([]reflect.Kind, len(valueRange.Values[1]))
+	for i := range colnames {
+		kindString := valueRange.Values[1][i].(string)
+		types[i] = primitiveStringToKind[kindString]
+	}
+	// 2행
+	rowsString, ok := valueRange.Values[2][0].(string)
+	var rows int64
+	if ok {
+		rows, _ = strconv.ParseInt(rowsString, 10, 64)
+	}
+
+	var constraint = ""
+	if len(valueRange.Values[2]) >= 3 {
+		constraint = valueRange.Values[2][2].(string)
+	}
+	metadata := &TableScheme{
+		Name:        tableName,
+		Columns:     colnames,
+		Types:       types,
+		Rows:        rows,
+		Constraints: newConstraintFromString(constraint),
+	}
+	table.scheme = metadata
+	return metadata
 }
 
 // value: a struct splitted with columns
