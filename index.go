@@ -10,21 +10,21 @@ import (
 	"sort"
 )
 
-type TableIndex struct {
+type tableIndex struct {
 	primaryIndex map[string]bool    // key: hex of value, value: list of index position
 	uniqueIndex  map[string][]int64 // key: hex of value, value: list of index position
 }
 
-func NewTableIndex() *TableIndex {
-	tableIndex := &TableIndex{}
-	tableIndex.primaryIndex = make(map[string]bool, 0)
-	tableIndex.uniqueIndex = make(map[string][]int64, 0)
-	return tableIndex
+func newTableIndex() *tableIndex {
+	index := &tableIndex{}
+	index.primaryIndex = make(map[string]bool, 0)
+	index.uniqueIndex = make(map[string][]int64, 0)
+	return index
 }
 
 // https://stackoverflow.com/questions/13582519/how-to-generate-hash-number-of-a-string-in-go
 // values: array of values which are splitted to column values
-func (index *TableIndex) Build(values [][]interface{}, metadata *TableMetadata) {
+func (index *tableIndex) build(values [][]interface{}, metadata *TableMetadata) {
 	if metadata.Constraints == nil {
 		return
 	}
@@ -38,7 +38,7 @@ func (index *TableIndex) Build(values [][]interface{}, metadata *TableMetadata) 
 
 	for i, v := range values {
 		uniqueColumns := metadata.columnsToIndices(metadata.Constraints.uniqueColumns)
-		uniqueHash := index.Hashcode(v, uniqueColumns...)
+		uniqueHash := index.hashcode(v, uniqueColumns...)
 		bucket, ok := index.uniqueIndex[uniqueHash]
 		if ok {
 			bucket = append(bucket, int64(i))
@@ -54,7 +54,7 @@ func (index *TableIndex) Build(values [][]interface{}, metadata *TableMetadata) 
 var trueOrFalse = map[bool]string{true: "TRUE", false: "FALSE"}
 
 // value: single struct splitted to column values
-func (index *TableIndex) Hashcode(value []interface{}, columnIndices ...int64) string {
+func (index *tableIndex) hashcode(value []interface{}, columnIndices ...int64) string {
 	reflectedValue := reflect.ValueOf(value)
 	testValue := ""
 	sort.Slice(columnIndices, func(i, j int) bool {
@@ -80,8 +80,8 @@ func (index *TableIndex) Hashcode(value []interface{}, columnIndices ...int64) s
 
 // value: struct splitted to column values
 // return: bool hasIndex, []int64 indices
-func (index *TableIndex) HasIndex(value []interface{}, columnIndices ...int64) (bool, []int64) {
-	hashed := index.Hashcode(value, columnIndices...)
+func (index *tableIndex) hasIndex(value []interface{}, columnIndices ...int64) (bool, []int64) {
+	hashed := index.hashcode(value, columnIndices...)
 	bucket, ok := index.uniqueIndex[hashed]
 	if ok {
 		return true, bucket

@@ -109,7 +109,7 @@ type Table struct {
 	database *Database
 	sheet    *sheets.Sheet
 	metadata *TableMetadata
-	index    *TableIndex
+	index    *tableIndex
 }
 
 // TableMetadata Metadata of the table
@@ -401,7 +401,7 @@ func (table *Table) hasIndexOf(value []interface{}) (bool, []int64) {
 	// unique constraint
 	columns := table.metadata.Constraints.uniqueColumns
 	columnIndex := table.metadata.columnsToIndices(columns)
-	return table.index.HasIndex(value, columnIndex...)
+	return table.index.hasIndex(value, columnIndex...)
 }
 
 func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstance interface{}, constraint ...*Constraint) []*sheets.Request {
@@ -481,7 +481,7 @@ func (table *Table) updateIndex() {
 	}
 	// if no index, create
 	if table.index == nil {
-		table.index = NewTableIndex()
+		table.index = newTableIndex()
 	}
 
 	// call data
@@ -491,7 +491,7 @@ func (table *Table) updateIndex() {
 	}
 
 	// build index
-	table.index.Build(data, metadata)
+	table.index.build(data, metadata)
 }
 
 func (metadata *TableMetadata) columnsToIndices(columns []string) []int64 {
