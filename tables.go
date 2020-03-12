@@ -131,12 +131,14 @@ type ArrayPredicate func([]interface{}) bool
 // Drop Drops an existing sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
 // If exists, deletes and returns true
 // If not existing, logs and returns false
+// Always update
 func (table *Table) Drop() bool {
 	request := make([]*sheets.Request, 1)
 	request[0] = &sheets.Request{}
 	request[0].DeleteSheet = &sheets.DeleteSheetRequest{}
 	request[0].DeleteSheet.SheetId = table.sheetID()
 	resp, _, _ := table.database.batchUpdate(request)
+	table.manager.SynchronizeFromGoogle(table.database)
 	return resp != nil
 }
 
