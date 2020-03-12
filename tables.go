@@ -397,17 +397,10 @@ func (table *Table) hasIndexOf(value []interface{}) (bool, []int64) {
 	if table.metadata.Constraints == nil {
 		return false, nil
 	}
-	// primary key
-	columns := table.metadata.Constraints.primaryKey
-	columnIndex := table.metadata.columnsToIndices(columns)
-	hasIndex, index := table.index.HasIndex(value, columnIndex...)
-	if hasIndex {
-		return true, index
-	}
 
 	// unique constraint
-	columns = table.metadata.Constraints.uniqueColumns
-	columnIndex = table.metadata.columnsToIndices(columns)
+	columns := table.metadata.Constraints.uniqueColumns
+	columnIndex := table.metadata.columnsToIndices(columns)
 	return table.index.HasIndex(value, columnIndex...)
 }
 

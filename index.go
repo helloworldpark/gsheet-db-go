@@ -28,7 +28,7 @@ func (index *TableIndex) Build(values [][]interface{}, metadata *TableMetadata) 
 	if metadata.Constraints == nil {
 		return
 	}
-	if len(metadata.Constraints.primaryKey) == 0 || len(metadata.Constraints.uniqueColumns) == 0 {
+	if len(metadata.Constraints.uniqueColumns) == 0 {
 		return
 	}
 
@@ -37,10 +37,6 @@ func (index *TableIndex) Build(values [][]interface{}, metadata *TableMetadata) 
 	index.uniqueIndex = make(map[string][]int64)
 
 	for i, v := range values {
-		primaryColumn := metadata.columnsToIndices(metadata.Constraints.primaryKey)
-		primaryKey := index.Hashcode(v, primaryColumn...)
-		index.primaryIndex[primaryKey] = true
-
 		uniqueColumns := metadata.columnsToIndices(metadata.Constraints.uniqueColumns)
 		uniqueHash := index.Hashcode(v, uniqueColumns...)
 		bucket, ok := index.uniqueIndex[uniqueHash]
