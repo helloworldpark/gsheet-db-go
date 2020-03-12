@@ -128,21 +128,6 @@ type Predicate func(interface{}) bool
 // ArrayPredicate Check if the given interface fits the condition
 type ArrayPredicate func([]interface{}) bool
 
-// sheetID alias of sheet id
-func (table *Table) sheetID() int64 {
-	return table.sheet.Properties.SheetId
-}
-
-// Name name of the table
-func (table *Table) Name() string {
-	return table.sheet.Properties.Title
-}
-
-// spreadsheet spreadsheet holding this table
-func (table *Table) spreadsheet() *sheets.Spreadsheet {
-	return table.database.Spreadsheet()
-}
-
 // Drop Drops an existing sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
 // If exists, deletes and returns true
 // If not existing, logs and returns false
@@ -153,6 +138,21 @@ func (table *Table) Drop() bool {
 	request[0].DeleteSheet.SheetId = table.sheetID()
 	resp, _, _ := table.database.batchUpdate(request)
 	return resp != nil
+}
+
+// Name name of the table
+func (table *Table) Name() string {
+	return table.sheet.Properties.Title
+}
+
+// sheetID alias of sheet id
+func (table *Table) sheetID() int64 {
+	return table.sheet.Properties.SheetId
+}
+
+// spreadsheet spreadsheet holding this table
+func (table *Table) spreadsheet() *sheets.Spreadsheet {
+	return table.database.Spreadsheet()
 }
 
 // header Metadata of the table
