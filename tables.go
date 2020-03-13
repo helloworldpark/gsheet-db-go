@@ -145,7 +145,7 @@ func (table *Table) Drop() bool {
 // Select Selects all the rows from the table
 func (table *Table) Select(rows int64) ([][]interface{}, *TableScheme) {
 	// sync
-	metadata := table.updatedHeader()
+	metadata := table.header()
 	if metadata == nil {
 		fmt.Println("Select: Metadata is nil")
 		return nil, nil
@@ -228,7 +228,7 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 				columnValues = append(columnValues, v.cvalue)
 			}
 		}
-		// primary key + constraint check
+		// constraint check
 		hasIndex, _ := table.hasIndexOf(columnValues)
 		if !hasIndex {
 			newValues = append(newValues, columnValues)
