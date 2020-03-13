@@ -443,7 +443,7 @@ type spreadsheetValuesBatchUpdateRequest struct {
 func newSpreadsheetValuesBatchUpdateRequest(manager *SheetManager, spreadsheetID, tableName string) *spreadsheetValuesBatchUpdateRequest {
 	return &spreadsheetValuesBatchUpdateRequest{
 		manager:       manager,
-		rangeValues:   defaultRange,
+		rangeValues:   "",
 		spreadsheetID: spreadsheetID,
 	}
 }
@@ -460,7 +460,7 @@ func rangeString(metadata *TableScheme, startRow, appendingRow int64) cellRange 
 
 // updateRange does not include end
 // values: values[0]: 0th struct, values[0][4]: 4th column value of 0th struct
-func (r *spreadsheetValuesBatchUpdateRequest) updateRange(metadata *TableScheme, appendData bool, values [][]interface{}) bool {
+func (r *spreadsheetValuesBatchUpdateRequest) updateRange(scheme *TableScheme, appendData bool, values [][]interface{}) bool {
 	if len(values) == 0 {
 		return false
 	}
@@ -468,26 +468,30 @@ func (r *spreadsheetValuesBatchUpdateRequest) updateRange(metadata *TableScheme,
 	r.updatingValues = nil
 	for i := range values {
 		r.updatingValues = append(r.updatingValues, make([]interface{}, 0))
-		for j := 0; j < len(metadata.Columns); j++ {
+		for j := 0; j < len(scheme.Columns); j++ {
 			r.updatingValues[i] = append(r.updatingValues[i], values[i][j])
 		}
 	}
 
 	startRow := tableDataStartRowIndex
 	if appendData {
-		startRow += metadata.Rows
+		startRow += scheme.Rows
 	}
-	ranges := rangeString(metadata, startRow, int64(len(values)))
+	ranges := rangeString(scheme, startRow, int64(len(values)))
 	r.rangeValues = ranges.String()
 	return true
 }
 
-func (r *spreadsheetValuesBatchUpdateRequest) updateRows(metadata *TableScheme, adding int) bool {
+func (r *spreadsheetValuesBatchUpdateRequest) updateRows(scheme *TableScheme, appendData bool, newRows int) bool {
+	fmt.Println("UpdateRow: appendData=", appendData, "newRows=", newRows)
 	unpackedValues := make([][]interface{}, 1)
 	unpackedValues[0] = make([]interface{}, 1)
-	unpackedValues[0][0] = metadata.Rows + int64(adding)
+	unpackedValues[0][0] = int64(newRows)
+	if appendData {
+		unpackedValues[0][0] = int64(newRows) + scheme.Rows
+	}
 
-	r.rangeRows = fmt.Sprintf("%s!A3", metadata.Name)
+	r.rangeRows = fmt.Sprintf("%s!A3", scheme.Name)
 	r.updatingRows = unpackedValues
 	return true
 }
@@ -495,20 +499,31 @@ func (r *spreadsheetValuesBatchUpdateRequest) updateRows(metadata *TableScheme, 
 func (r *spreadsheetValuesBatchUpdateRequest) Do() int {
 	r.manager.refreshToken()
 
-	rangeValues := &sheets.ValueRange{}
-	rangeValues.Range = r.rangeValues
-	rangeValues.Values = r.updatingValues
-
-	rangeRows := &sheets.ValueRange{}
-	rangeRows.Range = r.rangeRows
-	rangeRows.Values = r.updatingRows
-
 	batchRequest := &sheets.BatchUpdateValuesRequest{}
 	batchRequest.IncludeValuesInResponse = true
 	batchRequest.ValueInputOption = "RAW"
-	batchRequest.Data = make([]*sheets.ValueRange, 2)
-	batchRequest.Data[0] = rangeValues
-	batchRequest.Data[1] = rangeRows
+	if len(r.rangeValues) == 0 {
+		// no data to update
+		batchRequest.Data = make([]*sheets.ValueRange, 1)
+
+		rangeRows := &sheets.ValueRange{}
+		rangeRows.Range = r.rangeRows
+		rangeRows.Values = r.updatingRows
+
+		batchRequest.Data[0] = rangeRows
+	} else {
+		batchRequest.Data = make([]*sheets.ValueRange, 2)
+		rangeValues := &sheets.ValueRange{}
+		rangeValues.Range = r.rangeValues
+		rangeValues.Values = r.updatingValues
+
+		rangeRows := &sheets.ValueRange{}
+		rangeRows.Range = r.rangeRows
+		rangeRows.Values = r.updatingRows
+
+		batchRequest.Data[0] = rangeValues
+		batchRequest.Data[1] = rangeRows
+	}
 
 	req := r.manager.service.Spreadsheets.Values.BatchUpdate(r.spreadsheetID, batchRequest)
 	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)

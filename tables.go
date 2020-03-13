@@ -260,8 +260,9 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 		// 처음부터라면 첫 행부터
 		// 기록한 행 업데이트도 같이 한다
 		req := newSpreadsheetValuesBatchUpdateRequest(table.manager, table.spreadsheet().SpreadsheetId, scheme.Name)
-		req.updateRange(scheme, appendData, newValues)
-		req.updateRows(scheme, len(newValues))
+		req.updateRange(scheme, appendData, filteredValues)
+		req.updateRows(scheme, appendData, len(filteredValues))
+
 		if req.Do()/100 != 2 {
 			return false
 		}
@@ -280,7 +281,7 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 		table.updateIndex()
 	}()
 	// call data
-	data, metadata := table.Select(-1)
+	data, scheme := table.Select(-1)
 	if data == nil {
 		return nil
 	}
@@ -301,26 +302,18 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 		return nil
 	}
 
+	// delete every data
+	if len(data) == len(deletedIndex) {
+		req := newSpreadsheetValuesBatchUpdateRequest(table.manager, table.spreadsheet().SpreadsheetId, scheme.Name)
+		req.updateRows(scheme, false, 0)
+		if req.Do()/100 != 2 {
+			return nil
+		}
+		return deletedIndex
+	}
+
 	// update deleted data
 	table.UpsertIf(newData, false)
-
-	// reorder data: batch clear
-	startRow := int64(3 + len(newData))
-	startCol := int64(0)
-	endRow := int64(3 + len(data))
-	endCol := int64(len(metadata.Columns))
-	ranges := newCellRange(metadata.Name, startRow, startCol, endRow, endCol)
-	clearRequest := newClearValuesRequest(table.manager, table.spreadsheet().SpreadsheetId, ranges)
-	if clearRequest.Do()/100 != 2 {
-		panic("Cannot clear old data")
-	}
-
-	// subtract row counts
-	syncRowCount := newSpreadsheetValuesBatchUpdateRequest(table.manager, table.spreadsheet().SpreadsheetId, metadata.Name)
-	syncRowCount.updateRows(metadata, -len(deletedIndex))
-	if syncRowCount.Do()/100 != 2 {
-		panic("Cannot update row")
-	}
 
 	// return index
 	return deletedIndex
@@ -475,7 +468,6 @@ func (m *SheetManager) createColumnsFromStruct(table *sheets.Sheet, structInstan
 func (table *Table) updateIndex() {
 	// if no constraint, no index update
 	if table.header().Constraints == nil {
-		fmt.Println("No constraint to create or maintain index")
 		return
 	}
 	// if no index, create
