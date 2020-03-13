@@ -431,17 +431,19 @@ func (r *httpValueRangeRequest) Do() *sheets.ValueRange {
 	return valueRange
 }
 
-type httpUpdateValuesRequest struct {
+type spreadsheetValuesBatchUpdateRequest struct {
 	manager        *SheetManager
-	ranges         string
 	spreadsheetID  string
+	rangeValues    string
 	updatingValues [][]interface{}
+	rangeRows      string
+	updatingRows   [][]interface{}
 }
 
-func newSpreadsheetValuesUpdateRequest(manager *SheetManager, spreadsheetID, tableName string) *httpUpdateValuesRequest {
-	return &httpUpdateValuesRequest{
+func newSpreadsheetValuesBatchUpdateRequest(manager *SheetManager, spreadsheetID, tableName string) *spreadsheetValuesBatchUpdateRequest {
+	return &spreadsheetValuesBatchUpdateRequest{
 		manager:       manager,
-		ranges:        defaultRange,
+		rangeValues:   defaultRange,
 		spreadsheetID: spreadsheetID,
 	}
 }
@@ -456,15 +458,9 @@ func rangeString(metadata *TableScheme, startRow, appendingRow int64) cellRange 
 	return ranges
 }
 
-func (r *httpUpdateValuesRequest) updateRangeWithArray(metadata *TableScheme, values [][]interface{}) {
-	r.updatingValues = values
-	startRow := metadata.Rows + tableDataStartColumnIndex
-	r.ranges = rangeString(metadata, startRow, int64(len(values))).String()
-}
-
 // updateRange does not include end
 // values: values[0]: 0th struct, values[0][4]: 4th column value of 0th struct
-func (r *httpUpdateValuesRequest) updateRange(metadata *TableScheme, appendData bool, values [][]interface{}) bool {
+func (r *spreadsheetValuesBatchUpdateRequest) updateRange(metadata *TableScheme, appendData bool, values [][]interface{}) bool {
 	if len(values) == 0 {
 		return false
 	}
@@ -482,35 +478,41 @@ func (r *httpUpdateValuesRequest) updateRange(metadata *TableScheme, appendData 
 		startRow += metadata.Rows
 	}
 	ranges := rangeString(metadata, startRow, int64(len(values)))
-	r.ranges = ranges.String()
+	r.rangeValues = ranges.String()
 	return true
 }
 
-func (r *httpUpdateValuesRequest) updateRows(metadata *TableScheme, adding int) bool {
+func (r *spreadsheetValuesBatchUpdateRequest) updateRows(metadata *TableScheme, adding int) bool {
 	unpackedValues := make([][]interface{}, 1)
 	unpackedValues[0] = make([]interface{}, 1)
 	unpackedValues[0][0] = metadata.Rows + int64(adding)
 
-	r.ranges = fmt.Sprintf("%s!A3", metadata.Name)
-	r.updatingValues = unpackedValues
+	r.rangeRows = fmt.Sprintf("%s!A3", metadata.Name)
+	r.updatingRows = unpackedValues
 	return true
 }
 
-func (r *httpUpdateValuesRequest) Do() int {
+func (r *spreadsheetValuesBatchUpdateRequest) Do() int {
 	r.manager.refreshToken()
+
 	rangeValues := &sheets.ValueRange{}
-	rangeValues.Range = r.ranges
+	rangeValues.Range = r.rangeValues
 	rangeValues.Values = r.updatingValues
-	req := r.manager.service.Spreadsheets.Values.Update(r.spreadsheetID, r.ranges, rangeValues)
-	req.ValueInputOption("RAW")
-	req.IncludeValuesInResponse(true)
+
+	rangeRows := &sheets.ValueRange{}
+	rangeRows.Range = r.rangeRows
+	rangeRows.Values = r.updatingRows
+
+	batchRequest := &sheets.BatchUpdateValuesRequest{}
+	batchRequest.IncludeValuesInResponse = true
+	batchRequest.ValueInputOption = "RAW"
+	batchRequest.Data = make([]*sheets.ValueRange, 2)
+	batchRequest.Data[0] = rangeValues
+	batchRequest.Data[1] = rangeRows
+
+	req := r.manager.service.Spreadsheets.Values.BatchUpdate(r.spreadsheetID, batchRequest)
 	req.Header().Add("Authorization", "Bearer "+r.manager.token.AccessToken)
 	updatedRange, err := req.Do()
-
-	for i := range rangeValues.Values {
-		v := rangeValues.Values[i][0]
-		fmt.Println(i, 0, reflect.ValueOf(v).Kind().String(), reflect.ValueOf(v).Interface())
-	}
 
 	if err != nil {
 		// gerr, ok := err.(*googleapi.Error)

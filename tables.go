@@ -210,11 +210,11 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 		table.updateIndex()
 	}()
 
-	metadata := table.updatedHeader()
-	if metadata == nil {
+	scheme := table.header()
+	if scheme == nil {
 		return false
 	}
-	if !metadata.fitsScheme(values[0]) {
+	if !scheme.fitsScheme(values[0]) {
 		fmt.Println("Input does not match table's scheme")
 		return false
 	}
@@ -258,14 +258,10 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 	if len(filteredValues) > 0 {
 		// 데이터를 덧붙인다면 마지막 행부터
 		// 처음부터라면 첫 행부터
-		req := newSpreadsheetValuesUpdateRequest(table.manager, table.spreadsheet().SpreadsheetId, metadata.Name)
-		req.updateRange(metadata, appendData, newValues)
-		if req.Do()/100 != 2 {
-			return false
-		}
-
-		// 기록한 행 업데이트
-		req.updateRows(metadata, len(newValues))
+		// 기록한 행 업데이트도 같이 한다
+		req := newSpreadsheetValuesBatchUpdateRequest(table.manager, table.spreadsheet().SpreadsheetId, scheme.Name)
+		req.updateRange(scheme, appendData, newValues)
+		req.updateRows(scheme, len(newValues))
 		if req.Do()/100 != 2 {
 			return false
 		}
@@ -320,7 +316,7 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	}
 
 	// subtract row counts
-	syncRowCount := newSpreadsheetValuesUpdateRequest(table.manager, table.spreadsheet().SpreadsheetId, metadata.Name)
+	syncRowCount := newSpreadsheetValuesBatchUpdateRequest(table.manager, table.spreadsheet().SpreadsheetId, metadata.Name)
 	syncRowCount.updateRows(metadata, -len(deletedIndex))
 	if syncRowCount.Do()/100 != 2 {
 		panic("Cannot update row")
@@ -488,13 +484,13 @@ func (table *Table) updateIndex() {
 	}
 
 	// call data
-	data, metadata := table.Select(-1)
-	if metadata == nil {
+	data, scheme := table.Select(-1)
+	if scheme == nil {
 		panic("Metadata must not be nil when updating indices")
 	}
 
 	// build index
-	table.index.build(data, metadata)
+	table.index.build(data, scheme)
 }
 
 func (metadata *TableScheme) columnsToIndices(columns []string) []int64 {
