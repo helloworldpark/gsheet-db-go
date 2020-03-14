@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/sheets/v4"
@@ -28,9 +29,13 @@ type SheetManager struct {
 
 	token          *oauth2.Token
 	credentialJSON string
+
+	apiUsage      int64
+	lastQuotaTime int64
 }
 
 // NewSheetManager Create new SheetManager
+// api count: 1
 func NewSheetManager(jsonPath string) *SheetManager {
 	client := http.DefaultClient
 	service, _ := sheets.New(client)
@@ -42,6 +47,7 @@ func NewSheetManager(jsonPath string) *SheetManager {
 		service:        service,
 		credentialJSON: jsonPath,
 	}
+	m.enqueueAPIUsage(1, false)
 	return m
 }
 
@@ -56,8 +62,10 @@ func (m *SheetManager) refreshToken() {
 
 // CreateDatabase creates a new database with the given database_file_`title`.
 // Be careful, 'database_file_' tag is on the start of the title.
+// api count: 1
 func (m *SheetManager) CreateDatabase(title string) *Database {
-	db := m.createSpreadsheet(dbFileStart + title)
+	db, sheetCount := m.createSpreadsheet(dbFileStart + title)
+	m.enqueueAPIUsage(sheetCount+1, false)
 	return &Database{
 		manager:     m,
 		spreadsheet: db,
@@ -67,8 +75,11 @@ func (m *SheetManager) CreateDatabase(title string) *Database {
 // FindDatabase gets a new database with the given database_file_`title`, if exists.
 // If not existing, it will return nil.
 // Be careful, 'database_file_' tag is on the start of the title finding for.
+// api count: 1
 func (m *SheetManager) FindDatabase(title string) *Database {
-	if db := m.findSpreadsheet(dbFileStart + title); db != nil {
+	db, sheetCount := m.findSpreadsheet(dbFileStart + title)
+	m.enqueueAPIUsage(sheetCount+1, false)
+	if db != nil {
 		return &Database{
 			manager:     m,
 			spreadsheet: db,
@@ -85,11 +96,13 @@ func (m *SheetManager) DropDatabase(title string) bool {
 	if db == nil {
 		return false
 	}
+	m.enqueueAPIUsage(1, false)
 	return m.deleteSpreadsheet(db.spreadsheet.SpreadsheetId)
 }
 
-// SynchronizeFromGoogle Synchronize data from google
-func (m *SheetManager) SynchronizeFromGoogle(db *Database) *Database {
+// synchronizeFromGoogle Synchronize data from google
+// api count: 1
+func (m *SheetManager) synchronizeFromGoogle(db *Database) *Database {
 	if db == nil {
 		return nil
 	}
@@ -101,6 +114,35 @@ func (m *SheetManager) SynchronizeFromGoogle(db *Database) *Database {
 	}
 	db.spreadsheet = rawDB
 	return db
+}
+
+/*
+ * google sheets api queue
+ */
+
+func (m *SheetManager) enqueueAPIUsage(task int64, blockIfQuota bool) {
+	// 출처: https://hakurei.tistory.com/193 [Reimu's Development Blog])
+	now := time.Now().In(time.FixedZone("GMT-7", -7*60*60)).Unix()
+	if m.lastQuotaTime == 0 {
+		m.lastQuotaTime = (now / 100) * 100
+	} else if m.lastQuotaTime+100 <= now {
+		m.lastQuotaTime = (now / 100) * 100
+	}
+	// check if api usage enough
+	fmt.Println("API Usage: ", m.apiUsage)
+	if m.apiUsage >= 90 {
+		if blockIfQuota {
+			timeToWait := time.Second * time.Duration(m.lastQuotaTime+100-now)
+			fmt.Printf("[%v] Pending %v seconds, api usage: %v\n", now, m.lastQuotaTime+100-now, m.apiUsage)
+			<-time.NewTimer(timeToWait).C
+		}
+
+		now = time.Now().In(time.FixedZone("GMT-7", -7*60*60)).Unix()
+		fmt.Printf("[%v] Resetting quota\n", now)
+		m.lastQuotaTime += 100
+		m.apiUsage = 0
+	}
+	m.apiUsage += task
 }
 
 /*
@@ -135,8 +177,9 @@ func (m *Database) isValidTable(sheet *sheets.Sheet) bool {
 	return true
 }
 
-// NewTableFromSheet creates new *Table instance
-func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
+// newTableFromSheet creates new *Table instance
+// api count: 2
+func (m *Database) newTableFromSheet(sheet *sheets.Sheet) *Table {
 	req := newSpreadsheetValuesRequest(m.manager, m.Spreadsheet().SpreadsheetId, sheet.Properties.Title)
 	req.updateRange(sheet.Properties.Title, 0, 0, 3, 25) // todo: hardcoding
 	valueRange := req.Do()
@@ -190,16 +233,19 @@ func (m *Database) NewTableFromSheet(sheet *sheets.Sheet) *Table {
  */
 
 // createSpreadsheet creates a single spreadsheet file
-func (m *SheetManager) createSpreadsheet(title string) *sheets.Spreadsheet {
+// api count: 1 + sheetIDs
+func (m *SheetManager) createSpreadsheet(title string) (*sheets.Spreadsheet, int64) {
 	// check duplicated title
-	if m.findSpreadsheet(title) != nil {
-		return nil
+	db, sheetCount := m.findSpreadsheet(title)
+	if db != nil {
+		return nil, sheetCount
 	}
 
-	return newSpreadsheetCreateRequest(m, title).Do()
+	return newSpreadsheetCreateRequest(m, title).Do(), sheetCount
 }
 
 // getSpreadsheet gets a single spreadsheet file with id, if exists.
+// api count: 1
 func (m *SheetManager) getSpreadsheet(spreadsheetID string) *sheets.Spreadsheet {
 	req := m.service.Spreadsheets.Get(spreadsheetID).IncludeGridData(true)
 	req.Header().Add("Authorization", "Bearer "+m.token.AccessToken)
@@ -215,12 +261,14 @@ func (m *SheetManager) getSpreadsheet(spreadsheetID string) *sheets.Spreadsheet 
 //         false if else
 // https://stackoverflow.com/questions/46836393/how-do-i-delete-a-spreadsheet-file-using-google-spreadsheets-api
 // https://stackoverflow.com/questions/46310113/consume-a-delete-endpoint-from-golang
+// api count: 1
 func (m *SheetManager) deleteSpreadsheet(spreadsheetID string) bool {
 	resp := newURLRequest(m, delete, fmt.Sprintf("https://www.googleapis.com/drive/v3/files/%s", spreadsheetID)).Do()
 	return resp.StatusCode/100 == 2
 }
 
 // listSpreadsheets lists spreadsheets' id by []string
+// api count: 1
 func (m *SheetManager) listSpreadsheets() []string {
 	req := newURLRequest(m, get, "https://www.googleapis.com/drive/v3/files")
 	// https://stackoverflow.com/questions/30652577/go-doing-a-get-request-and-building-the-querystring
@@ -271,15 +319,16 @@ func (m *SheetManager) listSpreadsheets() []string {
 }
 
 // findSpreadsheet finds a spreadsheet with `title`
-func (m *SheetManager) findSpreadsheet(title string) *sheets.Spreadsheet {
+// api count: 1 + sheetIDs
+func (m *SheetManager) findSpreadsheet(title string) (*sheets.Spreadsheet, int64) {
 	sheetIDs := m.listSpreadsheets()
 	for _, sheetID := range sheetIDs {
 		s := m.getSpreadsheet(sheetID)
 		if s.Properties.Title == title {
-			return s
+			return s, int64(len(sheetIDs))
 		}
 	}
-	return nil
+	return nil, 0
 }
 
 /*
@@ -483,7 +532,6 @@ func (r *spreadsheetValuesBatchUpdateRequest) updateRange(scheme *TableScheme, a
 }
 
 func (r *spreadsheetValuesBatchUpdateRequest) updateRows(scheme *TableScheme, appendData bool, newRows int) bool {
-	fmt.Println("UpdateRow: appendData=", appendData, "newRows=", newRows)
 	unpackedValues := make([][]interface{}, 1)
 	unpackedValues[0] = make([]interface{}, 1)
 	unpackedValues[0][0] = int64(newRows)

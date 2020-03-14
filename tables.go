@@ -18,7 +18,11 @@ import (
 // database == nil: return nil
 // database != nil: log as creating, and return the created sheet with true
 func (db *Database) CreateTable(scheme interface{}, constraint ...*Constraint) *Table {
-	// 1. Create new
+	db.Manager().enqueueAPIUsage(4, false)
+	return db.createTable(scheme, constraint...)
+}
+func (db *Database) createTable(scheme interface{}, constraint ...*Constraint) *Table {
+	// check if spreadsheet exists in local
 	if db.Spreadsheet() == nil {
 		// todo: log
 		return nil
@@ -30,6 +34,7 @@ func (db *Database) CreateTable(scheme interface{}, constraint ...*Constraint) *
 		}
 	}
 	// add sheet
+	// api call: 1
 	request := make([]*sheets.Request, 1)
 	request[0] = &sheets.Request{}
 	request[0].AddSheet = &sheets.AddSheetRequest{}
@@ -46,15 +51,18 @@ func (db *Database) CreateTable(scheme interface{}, constraint ...*Constraint) *
 			break
 		}
 	}
-	// Apply requests
+	// apply requests
+	// api call: 1
 	requests := db.manager.createColumnsFromStruct(newSheet, scheme, constraint...)
 	updated, _, statusCode := db.batchUpdate(requests)
 	if updated == nil {
 		return nil
 	}
+	// create *table
+	// api call: 2
 	for _, updatedSheet := range updated.Sheets() {
 		if updatedSheet.Properties.SheetId == newSheet.Properties.SheetId {
-			newTable := db.NewTableFromSheet(updatedSheet)
+			newTable := db.newTableFromSheet(updatedSheet)
 			return newTable
 		}
 	}
@@ -65,28 +73,38 @@ func (db *Database) CreateTable(scheme interface{}, constraint ...*Constraint) *
 // If exists, returns the existed one
 // If not existing, returns nil
 func (db *Database) FindTable(str interface{}) *Table {
+	table, others := db.findTable(str)
+	db.Manager().enqueueAPIUsage(others, false)
+	return table
+}
+func (db *Database) findTable(str interface{}) (*Table, int64) {
 	tableName := reflect.TypeOf(str).Name()
-	tables := db.ListTables()
+	tables := db.listTables()
 	for _, table := range tables {
 		if table.Name() == tableName {
-			return table
+			return table, int64(len(tables))
 		}
 	}
-	return nil
+	return nil, int64(len(tables))
 }
 
 // ListTables Gets an existing sheets(a.k.a. table) in the given Spreadsheet(a.k.a. database).
 // If exists, returns the existings
 // If not existing, returns nil
 func (db *Database) ListTables() []*Table {
-	db.Manager().SynchronizeFromGoogle(db)
+	tables := db.listTables()
+	db.Manager().enqueueAPIUsage(1+int64(len(tables)), false)
+	return tables
+}
+func (db *Database) listTables() []*Table {
+	db.Manager().synchronizeFromGoogle(db)
 	sheets := db.Sheets()
 	tables := make([]*Table, 0)
 	for i := range sheets {
 		if !db.isValidTable(sheets[i]) {
 			continue
 		}
-		newTable := db.NewTableFromSheet(sheets[i])
+		newTable := db.newTableFromSheet(sheets[i])
 		if newTable != nil {
 			tables = append(tables, newTable)
 		}
@@ -128,7 +146,7 @@ type Predicate func(interface{}) bool
 // ArrayPredicate Check if the given interface fits the condition
 type ArrayPredicate func([]interface{}) bool
 
-// Drop Drops an existing sheet(a.k.a. table) with `tableName` on the given Spreadsheet(a.k.a. database)
+// Drop Drops the table(a.k.a. sheet).
 // If exists, deletes and returns true
 // If not existing, logs and returns false
 // Always update
@@ -138,13 +156,16 @@ func (table *Table) Drop() bool {
 	request[0].DeleteSheet = &sheets.DeleteSheetRequest{}
 	request[0].DeleteSheet.SheetId = table.sheetID()
 	resp, _, _ := table.database.batchUpdate(request)
-	table.manager.SynchronizeFromGoogle(table.database)
+	table.manager.synchronizeFromGoogle(table.database)
 	return resp != nil
 }
 
 // Select Selects all the rows from the table
 func (table *Table) Select(rows int64) ([][]interface{}, *TableScheme) {
-	// sync
+	table.manager.enqueueAPIUsage(1, true)
+	return table.selectData(rows)
+}
+func (table *Table) selectData(rows int64) ([][]interface{}, *TableScheme) {
 	metadata := table.header()
 	if metadata == nil {
 		fmt.Println("Select: Metadata is nil")
@@ -173,7 +194,11 @@ func (table *Table) Select(rows int64) ([][]interface{}, *TableScheme) {
 // filters.key: int, column index
 // filters.value: Predicate, whether to select or not
 func (table *Table) SelectAndFilter(filters map[int]Predicate) ([][]interface{}, *TableScheme) {
-	fullData, _ := table.Select(-1)
+	table.manager.enqueueAPIUsage(1, true)
+	return table.selectAndFilter(filters)
+}
+func (table *Table) selectAndFilter(filters map[int]Predicate) ([][]interface{}, *TableScheme) {
+	fullData, _ := table.selectData(-1)
 	metadata := table.header()
 	if len(filters) == 0 {
 		return fullData, metadata
@@ -200,6 +225,10 @@ func (table *Table) SelectAndFilter(filters map[int]Predicate) ([][]interface{},
 // UpsertIf Upserts given `values`. Returns true if success.
 // condition.key: column index
 func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions ...map[int]Predicate) bool {
+	table.manager.enqueueAPIUsage(2, true)
+	return table.upsertIf(values, appendData, conditions...)
+}
+func (table *Table) upsertIf(values []interface{}, appendData bool, conditions ...map[int]Predicate) bool {
 	if len(values) == 0 {
 		return false
 	}
@@ -275,13 +304,17 @@ func (table *Table) UpsertIf(values []interface{}, appendData bool, conditions .
 // deleteThis: input - array of row values
 // returns: array of rows starting from 0
 func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
+	table.manager.enqueueAPIUsage(3, true)
+	return table.delete(deleteThis)
+}
+func (table *Table) delete(deleteThis ArrayPredicate) []int64 {
 	defer func() {
 		// sync
 		table.updatedHeader()
 		table.updateIndex()
 	}()
 	// call data
-	data, scheme := table.Select(-1)
+	data, scheme := table.selectData(-1)
 	if data == nil {
 		return nil
 	}
@@ -313,7 +346,7 @@ func (table *Table) Delete(deleteThis ArrayPredicate) []int64 {
 	}
 
 	// update deleted data
-	table.UpsertIf(newData, false)
+	table.upsertIf(newData, false)
 
 	// return index
 	return deletedIndex
@@ -342,7 +375,7 @@ func (table *Table) header() *TableScheme {
 // updatedHeader Reads table's metadata from the server and sync
 func (table *Table) updatedHeader() *TableScheme {
 	// sync
-	table.manager.SynchronizeFromGoogle(table.database)
+	table.manager.synchronizeFromGoogle(table.database)
 	tableName := table.Name()
 	tableCols := int64(len(table.header().Columns))
 
@@ -476,7 +509,7 @@ func (table *Table) updateIndex() {
 	}
 
 	// call data
-	data, scheme := table.Select(-1)
+	data, scheme := table.selectData(-1)
 	if scheme == nil {
 		panic("Metadata must not be nil when updating indices")
 	}

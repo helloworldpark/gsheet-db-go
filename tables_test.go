@@ -133,7 +133,7 @@ func TestListSpreadsheet(t *testing.T) {
 // spreadsheet: find
 func TestFindSpreadsheet(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.findSpreadsheet("Test First!")
+	sheet, _ := manager.findSpreadsheet("Test First!")
 	fmt.Println("------Listing sheet------")
 	describeSpreadsheet(sheet)
 }
@@ -141,7 +141,7 @@ func TestFindSpreadsheet(t *testing.T) {
 // spreadsheet: find + delete
 func TestDeleteDatabase(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
-	sheet := manager.findSpreadsheet(dbFileStart + "testdb")
+	sheet, _ := manager.findSpreadsheet(dbFileStart + "testdb")
 	fmt.Println("------Find sheet------")
 	describeSpreadsheet(sheet)
 	sheetID := sheet.SpreadsheetId
@@ -171,7 +171,7 @@ func TestCreateTableWithIndex(t *testing.T) {
 
 	constraint := NewConstraint()
 	constraint.SetUniqueColumns("Name1", "Name2")
-	table := db.CreateTable(TestStructMeme{}, constraint)
+	table := db.createTable(TestStructMeme{}, constraint)
 	fmt.Printf("DB: %s Table %s[%d] created\n", db.spreadsheet.SpreadsheetId, table.Name(), table.sheetID())
 
 	tableMeta := table.header()
@@ -186,7 +186,7 @@ func TestCreateTableWithIndex(t *testing.T) {
 func TestListTables(t *testing.T) {
 	manager := NewSheetManager(jsonPath)
 	database := manager.FindDatabase("testdb")
-	database.Manager().SynchronizeFromGoogle(database)
+	database.Manager().synchronizeFromGoogle(database)
 	tables := database.ListTables()
 	for i := range tables {
 		describeTable(tables[i])
@@ -242,7 +242,7 @@ func TestResetTable(t *testing.T) {
 		fmt.Println("Failed drop Table ", tableName)
 	}
 
-	table = database.CreateTable(TestStructMeme{})
+	table = database.createTable(TestStructMeme{})
 	fmt.Println("Table created")
 	describeTable(table)
 }
@@ -258,14 +258,14 @@ func TestReadTable(t *testing.T) {
 	// Find or make table
 	table := db.FindTable(TestStructMeme{})
 	if table == nil {
-		table = db.CreateTable(TestStructMeme{})
+		table = db.createTable(TestStructMeme{})
 		fmt.Println("Table created\n", table.Name(), table.sheetID())
 	} else {
 		fmt.Println("Table found\n", table.Name(), table.sheetID())
 	}
 	describeTable(table)
 
-	tableValue, _ := table.Select(-1)
+	tableValue, _ := table.selectData(-1)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v", i, j, tableValue[i][j])
@@ -285,7 +285,7 @@ func TestReadAndWriteTable(t *testing.T) {
 	// Find or make table
 	table := db.FindTable(TestStructMeme{})
 	if table == nil {
-		table = db.CreateTable(TestStructMeme{})
+		table = db.createTable(TestStructMeme{})
 		fmt.Println("Table created\n", table.Name(), table.sheetID())
 	} else {
 		fmt.Println("Table found\n", table.Name(), table.sheetID())
@@ -315,7 +315,7 @@ func TestReadAndWriteTable(t *testing.T) {
 	}
 	fmt.Println("Table before")
 	describeTable(table)
-	didSuccess := table.UpsertIf(values, true)
+	didSuccess := table.upsertIf(values, true)
 	if didSuccess {
 		fmt.Printf("Table %s[%d] Success Write %d Data\n", table.Name(), table.sheetID(), len(values))
 	} else {
@@ -324,7 +324,7 @@ func TestReadAndWriteTable(t *testing.T) {
 	fmt.Println("Table after")
 	describeTable(table)
 
-	tableValue, _ := table.Select(-1)
+	tableValue, _ := table.selectData(-1)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
@@ -344,7 +344,7 @@ func TestReadTableWithFilter(t *testing.T) {
 	// Find or make table
 	table := db.FindTable(TestStructMeme{})
 	if table == nil {
-		table = db.CreateTable(TestStructMeme{})
+		table = db.createTable(TestStructMeme{})
 		fmt.Println("Table created\n", table.Name(), table.sheetID())
 	} else {
 		fmt.Println("Table found\n", table.Name(), table.sheetID())
@@ -364,7 +364,7 @@ func TestReadTableWithFilter(t *testing.T) {
 	filterMap[5] = filter
 	filterMap[0] = filter2
 
-	tableValue, _ := table.SelectAndFilter(filterMap)
+	tableValue, _ := table.selectAndFilter(filterMap)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
@@ -384,7 +384,7 @@ func TestDeleteRow(t *testing.T) {
 	// Find or make table
 	table := db.FindTable(TestStructMeme{})
 	if table == nil {
-		table = db.CreateTable(TestStructMeme{})
+		table = db.createTable(TestStructMeme{})
 		fmt.Println("Table created\n", table.Name(), table.sheetID())
 	} else {
 		fmt.Println("Table found\n", table.Name(), table.sheetID())
@@ -411,13 +411,13 @@ func TestDeleteRow(t *testing.T) {
 		return p1
 	}
 
-	deletedIndex := table.Delete(predicate)
+	deletedIndex := table.delete(predicate)
 	for i := 0; i < len(deletedIndex); i++ {
 		fmt.Println("Deleted: ", deletedIndex[i])
 	}
 	fmt.Println("------3")
 
-	tableValue, _ := table.Select(-1)
+	tableValue, _ := table.selectData(-1)
 	for i := 0; i < len(tableValue); i++ {
 		for j := 0; j < len(tableValue[i]); j++ {
 			fmt.Printf("V[%d][%d] = %v ", i, j, tableValue[i][j])
@@ -439,7 +439,7 @@ func TestConstraintTable(t *testing.T) {
 	if table == nil {
 		constraint := NewConstraint()
 		constraint.SetUniqueColumns("Yes", "Name")
-		table = db.CreateTable(TestStructSmall{}, constraint)
+		table = db.createTable(TestStructSmall{}, constraint)
 		fmt.Println("Table created\n", table.Name(), table.sheetID())
 	} else {
 		fmt.Println("Table found\n", table.Name(), table.sheetID())
@@ -467,9 +467,9 @@ func TestConstraintTable(t *testing.T) {
 		Yes:  false,
 		Name: "scdef",
 	}
-	table.UpsertIf(bucket, true)
+	table.upsertIf(bucket, true)
 
-	data, tableMeta := table.Select(-1)
+	data, tableMeta := table.selectData(-1)
 	fmt.Println("-----------------------------")
 	fmt.Printf("Table name: %s Rows: %d\n", tableMeta.Name, tableMeta.Rows)
 	fmt.Printf("      %v\n      %v\n", tableMeta.Types, tableMeta.Columns)
@@ -494,7 +494,7 @@ func TestInvalidSchemeValue(t *testing.T) {
 	if table == nil {
 		constraint := NewConstraint()
 		constraint.SetUniqueColumns("Yes", "Name")
-		table = db.CreateTable(TestStructSmall{}, constraint)
+		table = db.createTable(TestStructSmall{}, constraint)
 		fmt.Println("Table created\n", table.Name(), table.sheetID())
 	} else {
 		fmt.Println("Table found\n", table.Name(), table.sheetID())
@@ -510,13 +510,13 @@ func TestInvalidSchemeValue(t *testing.T) {
 		testing:  "ssdfod",
 	}
 
-	table.UpsertIf(bucket, true)
+	table.upsertIf(bucket, true)
 
 	for i, v := range table.index.uniqueIndex {
 		fmt.Printf("----Idx[%s] %v\n", i, v)
 	}
 
-	data, tableMeta := table.Select(-1)
+	data, tableMeta := table.selectData(-1)
 	fmt.Println("-----------------------------")
 	fmt.Printf("Table name: %s Rows: %d\n", tableMeta.Name, tableMeta.Rows)
 	fmt.Printf("      %v\n      %v\n", tableMeta.Types, tableMeta.Columns)
