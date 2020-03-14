@@ -129,16 +129,16 @@ func (m *SheetManager) enqueueAPIUsage(task int64, blockIfQuota bool) {
 		m.lastQuotaTime = (now / 100) * 100
 	}
 	// check if api usage enough
-	fmt.Println("API Usage: ", m.apiUsage)
+	// fmt.Println("API Usage: ", m.apiUsage)
 	if m.apiUsage >= 90 {
 		if blockIfQuota {
 			timeToWait := time.Second * time.Duration(m.lastQuotaTime+100-now)
-			fmt.Printf("[%v] Pending %v seconds, api usage: %v\n", now, m.lastQuotaTime+100-now, m.apiUsage)
+			// fmt.Printf("[%v] Pending %v seconds, api usage: %v\n", now, m.lastQuotaTime+100-now, m.apiUsage)
 			<-time.NewTimer(timeToWait).C
 		}
 
 		now = time.Now().In(time.FixedZone("GMT-7", -7*60*60)).Unix()
-		fmt.Printf("[%v] Resetting quota\n", now)
+		// fmt.Printf("[%v] Resetting quota\n", now)
 		m.lastQuotaTime += 100
 		m.apiUsage = 0
 	}

@@ -14,7 +14,7 @@ func unitBenchmarkUpsertif(table *Table, values []interface{}, appendData bool) 
 func createRandomDataMeme() ([]interface{}, int) {
 	var values []interface{}
 	seed := int(time.Now().Unix())
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 100; i++ {
 		s := rand.NewSource(time.Now().Unix())
 		r := rand.New(s)
 		meme := TestStructMeme{
@@ -48,24 +48,24 @@ func BenchmarkUpsertif(t *testing.B) {
 	table := db.FindTable(TestStructMeme{})
 	if table == nil {
 		table = db.createTable(TestStructMeme{})
-		fmt.Println("Table created\n", table.Name(), table.sheetID())
+		// fmt.Println("Table created\n", table.Name(), table.sheetID())
 	} else {
-		fmt.Println("Table found\n", table.Name(), table.sheetID())
+		// fmt.Println("Table found\n", table.Name(), table.sheetID())
 	}
-	tableName := table.Name()
+	// tableName := table.Name()
 	deleted := table.Drop()
 	if deleted {
-		fmt.Println("Deleted Table ", tableName)
+		// fmt.Println("Deleted Table ", tableName)
 	} else {
-		fmt.Println("Failed drop Table ", tableName)
+		// fmt.Println("Failed drop Table ", tableName)
 	}
 
 	table = db.createTable(TestStructMeme{})
-	fmt.Println("Table recreated")
-	describeTable(table)
+	// fmt.Println("Table recreated")
+	// describeTable(table)
 
-	fmt.Println("Starting benchmark")
-	for i := 0; i < 20; i++ {
+	// fmt.Println("Starting benchmark")
+	for i := 0; i < 10; i++ {
 		values, _ := createRandomDataMeme()
 		table.manager.enqueueAPIUsage(2, true)
 		t.StartTimer()
@@ -75,5 +75,49 @@ func BenchmarkUpsertif(t *testing.B) {
 	now := time.Now().In(time.FixedZone("GMT-7", -7*60*60)).Unix()
 	next := ((now / 100) + 1) * 100
 	<-time.NewTimer(time.Duration(next-now+1) * time.Second).C
-	fmt.Println("Finished benchmark")
+	// fmt.Println("Finished benchmark")
+}
+
+func BenchmarkSelect(t *testing.B) {
+	// create table
+	t.StopTimer()
+	manager := NewSheetManager(jsonPath)
+	db := manager.FindDatabase("testdb")
+	if db == nil {
+		t.Fatalf("Sheet %s is nil", "testdb")
+	}
+
+	// Find or make table
+	table := db.FindTable(TestStructMeme{})
+	if table == nil {
+		table = db.createTable(TestStructMeme{})
+		// fmt.Println("Table created\n", table.Name(), table.sheetID())
+	} else {
+		// fmt.Println("Table found\n", table.Name(), table.sheetID())
+	}
+	// tableName := table.Name()
+	deleted := table.Drop()
+	if deleted {
+		// fmt.Println("Deleted Table ", tableName)
+	} else {
+		// fmt.Println("Failed drop Table ", tableName)
+	}
+
+	table = db.createTable(TestStructMeme{})
+	// fmt.Println("Table recreated")
+	// describeTable(table)
+
+	// fmt.Println("Starting benchmark")
+	values, _ := createRandomDataMeme()
+	table.UpsertIf(values, true)
+	for i := 0; i < 10; i++ {
+		table.manager.enqueueAPIUsage(1, true)
+		t.StartTimer()
+		table.selectData(-1)
+		t.StopTimer()
+	}
+	now := time.Now().In(time.FixedZone("GMT-7", -7*60*60)).Unix()
+	next := ((now / 100) + 1) * 100
+	<-time.NewTimer(time.Duration(next-now+1) * time.Second).C
+	// fmt.Println("Finished benchmark")
 }
