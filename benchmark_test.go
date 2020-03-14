@@ -15,14 +15,15 @@ func createRandomDataMeme() ([]interface{}, int) {
 	var values []interface{}
 	seed := int(time.Now().Unix())
 	for i := 0; i < 10; i++ {
-		rand.Seed(time.Now().Unix())
+		s := rand.NewSource(time.Now().Unix())
+		r := rand.New(s)
 		meme := TestStructMeme{
-			Name1: int16(rand.Int31()),
-			Name2: rand.Int31(),
+			Name1: int16(r.Int31()),
+			Name2: r.Int31(),
 			Name3: seed,
-			Name4: rand.Float64(),
+			Name4: r.Float64(),
 			Name5: fmt.Sprintf("Perfume%d", i),
-			Name6: rand.Int()%2 == 0,
+			Name6: r.Int()%2 == 0,
 		}
 
 		values = append(values, meme)
@@ -51,6 +52,16 @@ func BenchmarkUpsertif(t *testing.B) {
 	} else {
 		fmt.Println("Table found\n", table.Name(), table.sheetID())
 	}
+	tableName := table.Name()
+	deleted := table.Drop()
+	if deleted {
+		fmt.Println("Deleted Table ", tableName)
+	} else {
+		fmt.Println("Failed drop Table ", tableName)
+	}
+
+	table = db.createTable(TestStructMeme{})
+	fmt.Println("Table recreated")
 	describeTable(table)
 
 	fmt.Println("Starting benchmark")
@@ -65,5 +76,4 @@ func BenchmarkUpsertif(t *testing.B) {
 	next := ((now / 100) + 1) * 100
 	<-time.NewTimer(time.Duration(next-now+1) * time.Second).C
 	fmt.Println("Finished benchmark")
-
 }
